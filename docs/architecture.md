@@ -6,6 +6,7 @@
 album photos
   -> page preprocessing
   -> stamp detection and crop extraction
+  -> manual crop review and correction
   -> OCR and visual feature extraction
   -> catalog candidate retrieval
   -> market evidence retrieval
@@ -23,6 +24,11 @@ Accepts album page photos, preserves the original image, and creates normalized 
 ### Stamp Segmentation
 
 Finds individual stamps on a page and stores bounding boxes, crop paths, and quality metrics. Early versions can use classical image processing; later versions can add object detection models.
+
+The sample album page shows that segmentation must handle regular grid-like
+groups, rotated stamps, overlapping stamps, cancellations, dark album stock,
+album rings, and partial crops. A manual correction loop is required before
+valuation results are trusted.
 
 ### Vision Extraction
 
@@ -44,6 +50,13 @@ Searches catalog/reference records using extracted features and visual similarit
 
 Combines catalog metadata, condition signals, and market evidence into a range. Every estimate should include confidence and source references.
 
+Valuation should explicitly separate:
+
+- identity confidence
+- condition confidence
+- market evidence strength
+- unobservable risk, such as watermark, paper, gum, hidden faults, or repairs
+
 ### Review UI
 
 Lets a human confirm, reject, or edit candidate matches before exporting the inventory.
@@ -58,3 +71,5 @@ The first backend schema focuses on evidence capture:
 - `PageAnalysis`: all stamps detected on a page
 - `CollectionSummary`: aggregate counts and value range
 
+Future schema work should add persistent records for page images, crop regions,
+source evidence, review state, and recommended next action.

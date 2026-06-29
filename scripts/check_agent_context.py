@@ -16,6 +16,8 @@ CONTEXT_PATHS = (
     "GPT.md",
     "README.md",
     "docs/ai/",
+    "docs/product-workflow.md",
+    "docs/research/",
     "docs/product-brief.md",
     "docs/architecture.md",
     "docs/data-strategy.md",

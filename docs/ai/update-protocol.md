@@ -21,8 +21,11 @@ Update durable context when a change affects any of these areas:
 Use this mapping:
 
 - Product behavior changed: update `docs/product-brief.md`, `README.md`, or both.
+- Product workflow changed: update `docs/product-workflow.md`.
 - Architecture changed: update `docs/architecture.md`.
 - Data source or valuation strategy changed: update `docs/data-strategy.md`.
+- Research or source assumptions changed: update the relevant file under
+  `docs/research/`.
 - Priority or milestone changed: update `docs/roadmap.md`.
 - Durable decision made: add an entry to `docs/ai/decisions.md`.
 - Current project memory changed: update `docs/ai/context.md`.
@@ -51,4 +54,3 @@ answer these questions without reading chat history:
 - What decisions are already made?
 - What risks or constraints matter?
 - What should happen next?
-

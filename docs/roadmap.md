@@ -7,6 +7,16 @@
 - Add initial API contract.
 - Add inventory and valuation data models.
 - Add agent operating docs and context update guardrails.
+- Document sample page observations, valuation method, and source strategy.
+
+## Milestone 1.5: Product Definition
+
+- Define detailed MVP workflow and review states.
+- Decide first UI and deployment shape.
+- Decide initial data-source policy.
+- Design persistent records for pages, crops, observations, candidates, evidence,
+  valuations, and review state.
+- Define confidence scoring and escalation rules.
 
 ## Milestone 2: Image Intake
 
@@ -19,6 +29,7 @@
 - Detect likely stamp regions on a page.
 - Extract crops and bounding boxes.
 - Add manual correction hooks for missed or incorrect crops.
+- Handle rotated, overlapping, partial, and tightly spaced stamps.
 
 ## Milestone 4: Vision Extraction
 
@@ -37,6 +48,8 @@
 - Attach market evidence to candidate matches.
 - Produce low/high value estimates.
 - Add collection-level summaries and export.
+- Separate catalog/reference value, active asking price evidence, realized sale
+  evidence, and condition uncertainty.
 
 ## Milestone 7: Review Experience
 

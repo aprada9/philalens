@@ -17,6 +17,11 @@ CSV, spreadsheet, or local catalog exports supplied by the user. This is the saf
 
 Open or permissively licensed references can help identify countries, issuers, themes, and historical context. Public references may not be detailed enough for exact catalog numbers.
 
+Potential references include Colnect, StampWorld, StampData, Freestampcatalogue,
+Stamps of the World Wiki, Wikidata, and Wikipedia. API availability and terms
+must be verified before automation; no source should be scraped without clear
+permission.
+
 ### Licensed Catalog Data
 
 Specialized philatelic catalogs are often copyrighted or licensed. Philalens should support importing licensed data but avoid bundling restricted datasets.
@@ -25,6 +30,10 @@ Specialized philatelic catalogs are often copyrighted or licensed. Philalens sho
 
 Useful valuation evidence includes realized sale prices, auction results, and recent marketplace transactions. Asking prices should be treated as weak evidence unless no better data exists.
 
+eBay's Browse API can provide keyword and image-based search over listings, but
+active listings are not the same as realized prices. Treat active marketplace
+listings as weaker evidence than completed sales or auction realizations.
+
 ## Matching Strategy
 
 1. Extract visible observations from the stamp image.
@@ -32,6 +41,14 @@ Useful valuation evidence includes realized sale prices, auction results, and re
 3. Use visual similarity to re-rank candidates.
 4. Apply condition and confidence adjustments.
 5. Return a range with evidence rather than a single definitive price.
+
+## Current Research Notes
+
+More detailed notes are tracked in:
+
+- `docs/research/data-sources.md`
+- `docs/research/philatelic-valuation.md`
+- `docs/research/sample-page-observations.md`
 
 ## Audit Trail
 
@@ -43,4 +60,3 @@ Each estimate should preserve:
 - matched fields
 - confidence score
 - explanation of the estimate
-

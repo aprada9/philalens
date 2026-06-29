@@ -78,3 +78,52 @@ keeps project memory synchronized with code changes.
 Consequences: Meaningful changes must update context docs. CI should flag
 changes that skip context updates.
 
+## 2026-06-29: Use A Segmentation-First Product Workflow
+
+Status: Accepted
+
+Context: The first real sample page contains many stamps on one album page,
+including regular rows, rotated stamps, overlapping stamps, cancellations, album
+rings, and partial crops.
+
+Decision: Philalens should first solve page-to-stamp segmentation with manual
+crop review before trying to value stamps.
+
+Rationale: Identification and valuation are only useful if the system isolates
+the correct stamp and records crop confidence.
+
+Consequences: The MVP needs page records, crop records, segmentation confidence,
+and manual correction states.
+
+## 2026-06-29: Estimate Value As Evidence-Weighted Ranges
+
+Status: Accepted
+
+Context: Many valuation factors are not visible from one front-side album photo,
+including watermark, paper, gum, hidden thins, regumming, and repairs.
+
+Decision: Philalens should output value ranges with identity confidence,
+condition confidence, evidence links, assumptions, and next-action guidance.
+
+Rationale: This gives useful collection triage without pretending to be a formal
+appraisal.
+
+Consequences: The data model and UI should represent evidence, uncertainty, and
+review status as first-class fields.
+
+## 2026-06-29: Use Source Adapters And Avoid Unlicensed Catalog Bundling
+
+Status: Accepted
+
+Context: Stamp catalogs and price data may be copyrighted or licensed. Current
+research did not verify a reliable official public API for stamp-specific online
+catalogs such as Colnect or StampWorld.
+
+Decision: Start with source adapters and user-imported reference data. Add
+automated connectors only for sources with clear API and terms permission.
+
+Rationale: This keeps the project useful while reducing legal and maintenance
+risk.
+
+Consequences: Data-source code should preserve source attribution, retrieved
+date, licensing notes, and confidence.

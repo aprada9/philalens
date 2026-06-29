@@ -27,6 +27,13 @@ A collector or inheritor of a stamp collection who wants an initial understandin
 - Collection-level summary.
 - Exportable CSV or JSON inventory.
 
+## Core Product Position
+
+Philalens should optimize for triage and evidence. The first valuable product is
+not an exact appraisal engine; it is a workflow that separates common low-value
+material from possible outliers, explains the evidence, and tells the user when
+better images or expert review are needed.
+
 ## Non-goals
 
 - Replacing a professional philatelic appraisal.
@@ -39,4 +46,5 @@ A collector or inheritor of a stamp collection who wants an initial understandin
 - Cancellations and poor photo quality can hide critical features.
 - Catalog and market data may be licensed, incomplete, or region-specific.
 - Asking price is not the same as realized sale price.
-
+- A front-side album photo cannot reliably assess gum, watermark, hidden thins,
+  regumming, or many repairs.

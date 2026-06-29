@@ -13,12 +13,16 @@ This index tells future agents where to find durable project memory.
 
 - `README.md`: high-level project summary and setup.
 - `docs/product-brief.md`: product problem, user, inputs, outputs, and non-goals.
+- `docs/product-workflow.md`: proposed end-to-end product workflow and review states.
 - `docs/roadmap.md`: staged plan.
 
 ## Technical Context
 
 - `docs/architecture.md`: pipeline and component boundaries.
 - `docs/data-strategy.md`: catalog, market data, licensing, and evidence strategy.
+- `docs/research/philatelic-valuation.md`: valuation factors and confidence method.
+- `docs/research/data-sources.md`: catalog, marketplace, and API source notes.
+- `docs/research/sample-page-observations.md`: observations from the first album page example.
 - `backend/pyproject.toml`: backend dependencies and tooling.
 - `backend/src/philalens/models.py`: current data contracts.
 - `backend/src/philalens/pipeline.py`: current analysis pipeline placeholder.
@@ -33,4 +37,3 @@ This index tells future agents where to find durable project memory.
 - `scripts/check_agent_context.py`: local/CI check that asks for context updates
   when important files change.
 - `.github/workflows/context-guard.yml`: GitHub Actions workflow for the guard.
-
