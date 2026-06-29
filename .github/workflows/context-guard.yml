@@ -1,0 +1,31 @@
+name: Context Guard
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  context-guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check agent context freshness
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 scripts/check_agent_context.py --base "origin/${{ github.base_ref }}" --head HEAD
+          else
+            python3 scripts/check_agent_context.py --base "${{ github.event.before }}" --head "${{ github.sha }}"
+          fi
+

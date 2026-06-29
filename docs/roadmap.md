@@ -6,6 +6,7 @@
 - Create backend project skeleton.
 - Add initial API contract.
 - Add inventory and valuation data models.
+- Add agent operating docs and context update guardrails.
 
 ## Milestone 2: Image Intake
 
@@ -42,4 +43,3 @@
 - Build a review UI for confirming or editing matches.
 - Export CSV and JSON inventories.
 - Track reviewed versus unreviewed estimates.
-

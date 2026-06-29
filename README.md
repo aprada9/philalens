@@ -20,10 +20,34 @@ Stamp values depend heavily on condition, rarity, watermark, perforation, cancel
 ## Repository Structure
 
 ```text
+AGENTS.md             Canonical operating guide for AI agents
 backend/              Python API and analysis pipeline
 docs/                 Product, architecture, data, and roadmap notes
+docs/ai/              Durable context for future AI coding sessions
 data/                 Local sample data, ignored except placeholders
 notebooks/            Exploration notebooks, ignored except placeholders
+scripts/              Developer and context-maintenance utilities
+```
+
+## Agentic Development
+
+Philalens is set up to be easy for future AI agents to continue. New sessions
+should start with `AGENTS.md`, then read `docs/ai/context.md` and
+`docs/ai/session-handoff.md`.
+
+When meaningful code, product, architecture, data, or workflow changes are made,
+the durable context docs should be updated in the same change. The repository
+includes a context guard:
+
+```bash
+python3 scripts/check_agent_context.py --base HEAD~1 --head HEAD
+```
+
+Or use:
+
+```bash
+make context-check
+make smoke
 ```
 
 ## Backend Setup
@@ -50,4 +74,3 @@ http://127.0.0.1:8000/docs
 - Add AI vision extraction with evidence capture.
 - Implement candidate matching and confidence scoring.
 - Add manual review before treating estimates as useful.
-
