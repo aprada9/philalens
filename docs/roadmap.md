@@ -20,10 +20,10 @@ Status: complete.
   valuations, and review state.
 - Define confidence scoring and escalation rules.
 
-Status: partly complete. The local-first app shape, batch HEIC input assumption,
-CSV/JSON exports, and automatic-first crop review policy are accepted. Catalog
-source policy, matching strategy, valuation scoring, and escalation rules still
-need deeper definition.
+Status: mostly complete for direction. The local-first app shape, batch HEIC
+input assumption, CSV/JSON exports, automatic-first crop review policy, and
+full evaluation northstar are accepted. Detailed thresholds, source-specific
+terms, and concrete scoring formulas still need implementation-time tuning.
 
 ## Milestone 2: Image Intake
 
@@ -56,11 +56,18 @@ handling, and detector tuning.
 - Store evidence and uncertainty.
 - Add prompt and schema tests for repeatability.
 
+Status: specified, not implemented. The next implementation step should define
+durable evaluation runs and stamp observation records before connecting an AI
+vision adapter.
+
 ## Milestone 5: Catalog Matching
 
 - Import a user-provided reference catalog.
 - Rank candidate matches by observations and visual similarity.
 - Expose alternative matches for review.
+
+Status: specified, not implemented. Start with user-imported source adapters and
+local text/visual retrieval. Avoid bundling restricted catalog data.
 
 ## Milestone 6: Valuation
 
@@ -69,6 +76,20 @@ handling, and detector tuning.
 - Add collection-level summaries and export.
 - Separate catalog/reference value, active asking price evidence, realized sale
   evidence, and condition uncertainty.
+
+Status: specified, not implemented. Valuation should use value buckets,
+confidence bands, evidence tiers, and recommended next actions before presenting
+collection-level ranges.
+
+## Milestone 6.5: Collection Evaluation Run
+
+- Add durable evaluation run records.
+- Process curated crops through observation extraction, candidate retrieval,
+  evidence gathering, valuation bucketing, and conservative collection rollup.
+- Preserve old runs when the pipeline is re-run.
+- Show run progress, warnings, errors, and source coverage.
+
+Status: specified in `docs/project-northstar.md`, not implemented.
 
 ## Milestone 7: Review Experience
 

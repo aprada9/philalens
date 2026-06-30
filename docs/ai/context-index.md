@@ -12,6 +12,8 @@ This index tells future agents where to find durable project memory.
 ## Product Context
 
 - `README.md`: high-level project summary and setup.
+- `docs/project-northstar.md`: consolidated final-tool northstar and staged
+  product/technical specification.
 - `docs/product-brief.md`: product problem, user, inputs, outputs, and non-goals.
 - `docs/product-workflow.md`: proposed end-to-end product workflow and review states.
 - `docs/roadmap.md`: staged plan.

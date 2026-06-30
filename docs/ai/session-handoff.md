@@ -29,6 +29,8 @@ Philalens has moved from placeholder foundation to a first local MVP foundation:
   manual crop creation, crop deletion, page deletion, and exports.
 - Initial pipeline placeholder remains for backward-compatible smoke checks.
 - Product, architecture, data strategy, and roadmap docs.
+- `docs/project-northstar.md`, a consolidated final-tool northstar and staged
+  specification for collection evaluation.
 - Agent operating guide and context infrastructure.
 - Context guard script and GitHub Actions workflow.
 - Product workflow and research notes for segmentation, valuation, and data
@@ -79,6 +81,9 @@ The user clarified:
 - missed stamps should be addable with a manual full-page drag crop
 - rotated stamps should be correctable dynamically in the selected-stamp
   inspector, without adding numeric rotation inputs
+- after crop detection and curation, the next phase should be automatic
+  collection evaluation, guided by a durable northstar that future sessions can
+  split into small steps
 
 ## What Is Not Built Yet
 
@@ -90,6 +95,9 @@ The user clarified:
 - Candidate/valuation review workflow beyond crop review.
 - Empirical tuning of YOLO confidence/margins against more of the user's real
   HEIC pages.
+- Evaluation runs, AI observation extraction, source adapters, local similarity
+  search, duplicate grouping, valuation buckets, marketplace evidence adapters,
+  and collection evaluation dashboards.
 
 ## Research Conclusions
 
@@ -101,13 +109,21 @@ The user clarified:
 - Start with user-imported/source-adapter data; avoid unlicensed catalog bundling.
 - eBay Browse API may help with active listing evidence, including image search,
   but active asking prices are weaker than realized sales.
+- Recent open-source scan did not find a mature end-to-end stamp valuation
+  system. Reusable ideas come from `code2k13/philately-tool` for local vector
+  search, structured catalogue projects such as Canadian Stamp Identifier, and
+  adjacent inventory tools such as My Stamps and OpenNumismat.
+- Evaluation should run as a durable, versioned process over curated crops and
+  should produce observations, candidates, source evidence, valuation buckets,
+  recommended next actions, and conservative collection summaries.
 
 ## Recommended Next Session Start
 
 1. Read `AGENTS.md`.
 2. Read `docs/ai/context.md`.
 3. Read `docs/product-brief.md`, `docs/product-workflow.md`,
-   `docs/architecture.md`, `docs/data-strategy.md`, and `docs/research/`.
+   `docs/project-northstar.md`, `docs/architecture.md`,
+   `docs/data-strategy.md`, and `docs/research/`.
 4. Check `git status --short --branch`.
 5. Run the backend tests if dependencies are installed:
    `cd backend && .venv/bin/python -m pytest -q`.
@@ -117,6 +133,13 @@ The user clarified:
 
 ## Next Good Tasks
 
+- Implement the first durable evaluation schema: evaluation runs, observations,
+  candidates, evidence, valuations, and optional embedding metadata.
+- Define and test the strict AI stamp observation schema.
+- Add a user-imported source adapter shape for CSV/spreadsheet reference data.
+- Add local similarity search and duplicate clustering as supporting retrieval.
+- Add a first conservative "Evaluate collection" run that assigns value buckets
+  and next actions before marketplace pricing.
 - Run a real HEIC batch through the local visualizer and inspect segmentation
   failure cases using the optional YOLO detector.
 - Compare results across more pages and tune detector confidence, crop margins,
@@ -124,7 +147,3 @@ The user clarified:
 - Improve segmentation for rotated, overlapping, partial, and tightly spaced
   stamps.
 - Improve drag-handle crop editing based on hands-on use.
-- Add persistent tables for stamp observations, candidates, evidence,
-  valuations, and recommended next actions.
-- Add AI vision extraction for individual crop observations with schema tests.
-- Define the source adapter schema and first catalog/reference import path.

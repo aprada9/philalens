@@ -8,6 +8,10 @@ Large stamp collections are hard to inventory manually. Album page photos often 
 
 Philalens helps convert album photos into a searchable, reviewable stamp inventory with candidate identifications and value estimates.
 
+The full product northstar and staged implementation specification are tracked
+in `docs/project-northstar.md`. That document should guide future sessions when
+splitting the final tool into buildable steps.
+
 ## Primary User
 
 A collector or inheritor of a stamp collection who wants an initial understanding of what the collection contains and which stamps may deserve expert review.
@@ -39,6 +43,12 @@ The first implementation is local-first: it stores uploaded page images,
 normalized derivatives, crop images, and SQLite project state on the user's
 machine. The browser UI should support batch review and correction before later
 AI description, matching, and valuation stages are trusted.
+
+After crop curation, the next major product phase is an explicit collection
+evaluation run. Evaluation should extract visible observations, retrieve ranked
+candidates from allowed sources, gather source and market evidence where
+configured, assign value buckets, and produce evidence-backed value ranges with
+recommended next actions.
 
 ## Non-goals
 

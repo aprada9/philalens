@@ -264,3 +264,25 @@ Consequences: The local SQLite schema now migrates crops with a
 `rotation_degrees` column. Crop image generation samples a rotated rectangle
 when rotation is nonzero. Future crop-review improvements should account for
 rotated crop geometry in overlays, coverage masks, and downstream vision.
+
+## 2026-06-30: Use A Northstar Spec For Evaluation Work
+
+Status: Accepted
+
+Context: After stamp detection and crop curation reached a usable local MVP, the
+user wanted a full project description and specification that can guide future
+sessions toward automatic collection evaluation.
+
+Decision: Add `docs/project-northstar.md` as the consolidated final-tool
+northstar. It defines the end-state workflow, evidence-backed evaluation method,
+source strategy, conceptual persistent data model, confidence/review policy, UI
+requirements, implementation phases, and acceptance criteria.
+
+Rationale: The next work spans AI observation, source adapters, visual
+similarity, evidence storage, valuation, review, and reporting. A single
+northstar reduces drift and lets future sessions implement one bounded step at a
+time.
+
+Consequences: Future changes to evaluation, matching, source strategy,
+valuation, or review UX should stay consistent with `docs/project-northstar.md`
+or explicitly update it.

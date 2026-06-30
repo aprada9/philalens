@@ -69,6 +69,9 @@ Capture:
   cancellation
 - missing information that cannot be determined from the crop
 
+Observation should run inside a durable evaluation run so results can be
+reproduced, reviewed, and superseded by later pipeline versions.
+
 ## 4. Candidate Identification
 
 The system retrieves candidate matches from allowed catalog/reference sources.
@@ -107,6 +110,11 @@ Outputs:
 - assumptions
 - recommended next action
 
+Valuation should also assign a value bucket such as `likely_common`,
+`identified_low_value`, `needs_better_image`, `possible_mid_value`,
+`possible_high_value`, `expert_review_recommended`, or `not_enough_evidence`.
+These buckets should drive collection-level triage and batch review.
+
 ## 6. Review And Export
 
 The user reviews page crops and candidate matches before treating estimates as
@@ -118,6 +126,9 @@ Useful exports:
 - JSON project data
 - spreadsheet with one row per stamp
 - collection summary report
+
+The full evaluation workflow, source strategy, conceptual data model, and
+implementation sequence are tracked in `docs/project-northstar.md`.
 
 ## Review States
 

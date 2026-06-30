@@ -7,8 +7,11 @@ album photos
   -> page preprocessing
   -> stamp detection and crop extraction
   -> manual crop review and correction
-  -> OCR and visual feature extraction
+  -> evaluation run creation
+  -> OCR/AI vision and visual feature extraction
+  -> duplicate and page-context grouping
   -> catalog candidate retrieval
+  -> visual similarity reranking
   -> market evidence retrieval
   -> confidence scoring
   -> value estimation
@@ -84,9 +87,27 @@ Extracts observable features from each crop:
 - condition observations
 - design description
 
+Vision extraction must distinguish visible facts from unobservable factors. A
+front-side album photo usually cannot prove watermark, paper, gum, hidden thins,
+repairs, regumming, or expertized authenticity. These unknowns should be stored
+as uncertainty, not silently ignored.
+
+### Evaluation Runs
+
+The next architecture phase should add durable evaluation runs. A run records
+the pipeline version, model/source settings, status, errors, and the observation,
+candidate, evidence, and valuation records produced for a collection. Runs make
+the process reproducible enough that improved pipelines can be re-run without
+overwriting older evidence.
+
 ### Candidate Matching
 
 Searches catalog/reference records using extracted features and visual similarity. Returns ranked candidates with evidence, not a single forced answer.
+
+Candidate retrieval should start with user-imported or otherwise permitted
+source adapters. Visual similarity should be a supporting signal, likely through
+a local embedding index over crop and reference images, not the only source of
+identity.
 
 ### Valuation
 
@@ -141,3 +162,6 @@ Persistent records for page images, crop regions, crop rotation, and crop review
 state now exist. Future schema work should add durable observation records,
 source evidence records, candidate records, valuation records, and recommended
 next action fields.
+
+The intended evaluation schema and staged implementation plan are specified in
+`docs/project-northstar.md`.

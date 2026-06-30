@@ -37,6 +37,10 @@ Philalens is set up to be easy for future AI agents to continue. New sessions
 should start with `AGENTS.md`, then read `docs/ai/context.md` and
 `docs/ai/session-handoff.md`.
 
+The consolidated final-tool direction lives in `docs/project-northstar.md`.
+Use it as the northstar when splitting future work into focused sessions,
+especially for evaluation, matching, valuation, review, and reporting.
+
 When meaningful code, product, architecture, data, or workflow changes are made,
 the durable context docs should be updated in the same change. The repository
 includes a context guard:

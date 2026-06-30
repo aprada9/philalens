@@ -56,6 +56,23 @@ listings as weaker evidence than completed sales or auction realizations.
 4. Apply condition and confidence adjustments.
 5. Return a range with evidence rather than a single definitive price.
 
+## Evaluation Source Lessons
+
+A recent source scan did not find a mature open-source end-to-end stamp album
+valuation system. Useful pieces exist and should guide Philalens:
+
+- `code2k13/philately-tool` is Apache-2.0 and combines YOLO cropping, local
+  crop indexing, CLIP/sentence-transformer embeddings, and SQLite vector search.
+- `adrianspeyer/Canadian-Stamp-Identifier` demonstrates a structured visual
+  stamp catalogue with proprietary IDs and explicit avoidance of Scott numbers,
+  but it is AGPL and Canada-specific, so reuse needs license review.
+- smaller image-similarity prototypes reinforce that Philalens should support
+  user-provided or permitted reference datasets rather than assume a public
+  all-world catalog is freely available.
+
+The durable evaluation source policy and adapter shape are specified in
+`docs/project-northstar.md`.
+
 ## Current Research Notes
 
 More detailed notes are tracked in:

@@ -15,6 +15,7 @@ CONTEXT_PATHS = (
     "GEMINI.md",
     "GPT.md",
     "README.md",
+    "docs/project-northstar.md",
     "docs/ai/",
     "docs/product-workflow.md",
     "docs/research/",

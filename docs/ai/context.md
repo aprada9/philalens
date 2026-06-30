@@ -53,6 +53,8 @@ The repository contains:
 - API endpoints in `backend/src/philalens/api.py` for collection upload,
   collection review, media serving, crop correction, and exports
 - product, architecture, data, and roadmap docs under `docs/`
+- a consolidated final-tool northstar and staged evaluation specification in
+  `docs/project-northstar.md`
 - product workflow and research notes under `docs/product-workflow.md` and
   `docs/research/`
 - agent context infrastructure through `AGENTS.md` and `docs/ai/`
@@ -90,6 +92,11 @@ The following are not implemented yet:
 - valuation logic
 - durable stamp observation/candidate/valuation tables
 - reviewed valuation workflow
+
+The desired evaluation direction is specified in `docs/project-northstar.md`.
+Evaluation should be modeled as a durable run over curated crops, producing
+observations, ranked candidates, source evidence, valuation buckets,
+recommended next actions, and conservative collection summaries.
 
 ## Important Constraints
 
@@ -134,18 +141,23 @@ The following are not implemented yet:
   inspector.
 - The second Reddit tool link supplied by the user was blocked by Reddit network
   security and no public source/license was found.
+- A source scan found no mature open-source end-to-end stamp album valuation
+  system. Useful pieces include the Apache-2.0 `code2k13/philately-tool` for
+  YOLO cropping plus CLIP-style local vector search, structured visual catalogue
+  patterns from `adrianspeyer/Canadian-Stamp-Identifier`, image-similarity
+  prototypes that require user-provided datasets, and collection-management
+  ideas from My Stamps and OpenNumismat.
 
 ## Open Product Questions
 
-- Which catalog/reference sources are legally usable for the first version, and
-  should the MVP begin with user-imported catalog data?
-- Should the first matching strategy rely on user-provided catalog data, public
-  references, or API-backed providers?
+- Which specific public references have terms suitable for automated access?
+- What exact CSV/spreadsheet shape should the first user-imported source
+  adapter require?
 - What minimum image quality warnings should block or defer AI analysis?
-- What fields should be in the durable stamp observation, candidate, evidence,
-  valuation, and review tables?
-- What valuation confidence and escalation rules should be applied before
-  showing collection-level ranges?
+- What concrete thresholds should drive identity, condition, market, valuation,
+  and expert-review confidence?
+- Which embedding backend should be used first: sqlite-vec, raw NumPy vectors in
+  SQLite, or another optional local vector store?
 
 Resolved for now:
 
@@ -163,17 +175,25 @@ Resolved for now:
   deleted from the local visualizer, and pending review crops can be filtered.
 - First manual crop UX: missed stamps can be added by drawing a crop rectangle
   on the full-page image, then adjusted and rotated in the inspector.
+- Evaluation northstar: use durable evaluation runs over curated crops, preserve
+  evidence and uncertainty, start with user-imported/permitted sources, use
+  visual similarity as a supporting signal, assign value buckets and next
+  actions, and avoid presenting formal appraisals.
 
 ## Next Likely Work
 
-1. Run the local visualizer against a larger real HEIC batch and collect
+1. Use `docs/project-northstar.md` as the northstar for future work sessions.
+2. Add durable evaluation-run, observation, candidate, evidence, valuation, and
+   optional embedding metadata tables.
+3. Define the strict AI stamp observation schema and tests.
+4. Add the first user-imported source adapter schema.
+5. Add local similarity search and duplicate grouping for crops/reference data.
+6. Implement the first conservative collection evaluation run with value buckets
+   before marketplace pricing.
+7. Run the local visualizer against a larger real HEIC batch and collect
    segmentation failure cases with the optional YOLO detector enabled.
-2. Tune confidence, margins, and review flags across more pages, not only the
+8. Tune confidence, margins, and review flags across more pages, not only the
    first sample page.
-3. Improve segmentation for rotated, overlapping, partial, and tightly spaced
+9. Improve segmentation for rotated, overlapping, partial, and tightly spaced
    stamps.
-4. Improve crop review ergonomics after real drag-handle use.
-5. Design durable tables for observations, candidates, evidence, valuations,
-   and recommended next actions.
-6. Add AI vision extraction for stamp crops with schema tests.
-7. Decide initial catalog/source policy for matching and valuation.
+10. Improve crop review ergonomics after real drag-handle use.
