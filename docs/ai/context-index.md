@@ -25,8 +25,18 @@ This index tells future agents where to find durable project memory.
 - `docs/research/sample-page-observations.md`: observations from the first album page example.
 - `backend/pyproject.toml`: backend dependencies and tooling.
 - `backend/src/philalens/models.py`: current data contracts.
-- `backend/src/philalens/pipeline.py`: current analysis pipeline placeholder.
+- `backend/src/philalens/storage.py`: local SQLite persistence for collections,
+  pages, and crops.
+- `backend/src/philalens/imaging.py`: image format support and normalization,
+  including HEIC/HEIF registration.
+- `backend/src/philalens/segmentation.py`: current OpenCV crop detection
+  prototype plus optional YOLO detector path.
+- `backend/src/philalens/exports.py`: CSV/JSON export shaping.
+- `backend/src/philalens/visualizer.py`: local browser UI.
+- `backend/src/philalens/pipeline.py`: compatibility pipeline placeholder.
 - `backend/src/philalens/api.py`: FastAPI entrypoint.
+- `scripts/download_stamp_detector.py`: downloads the optional Apache-2.0 YOLO
+  model into ignored local storage.
 
 ## Decision Memory
 

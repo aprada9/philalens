@@ -5,6 +5,29 @@ evidence, and expertization. Do not treat one source as sufficient for valuation
 
 ## Source Categories
 
+### Open-Source Tooling
+
+The Reddit post "I built an opensource tool to autocrop stamps" points to
+`code2k13/philately-tool`, an Apache-2.0 GitHub repository. The reusable
+segmentation idea is to run an Ultralytics YOLO model over each album page,
+use a confidence threshold around `0.4`, expand each detected box by a small
+margin, and save individual stamp crops. The repository also includes a
+`model.pt` artifact of about 6.25 MB.
+
+Philalens uses the same model path but defaults to a lower confidence threshold
+of `0.1` for review coverage after the sample HEIC page showed full rows being
+missed at stricter thresholds. Low-confidence detections are preserved for
+manual review rather than treated as trusted crops.
+
+Philalens does not vendor this model into Git. Instead,
+`scripts/download_stamp_detector.py` downloads it into ignored local storage
+under `data/local/models/` and records source/license metadata next to the
+model. The optional dependency group is `.[yolo]`.
+
+The second Reddit link supplied by the user was blocked by Reddit network
+security during review and no public source repository or license was found by
+search. Do not reuse it until a source and license are available.
+
 ### Licensed Or Commercial Catalogs
 
 Major worldwide catalogs include Scott, Michel, Stanley Gibbons, and Yvert et
@@ -122,4 +145,7 @@ Each source adapter should return:
   https://developer.ebay.com/api-docs/buy/browse/resources/item_summary/methods/search
 - eBay Browse API image search:
   https://developer.ebay.com/api-docs/buy/browse/resources/item_summary/methods/searchByImage
-
+- code2k13 philately-tool:
+  https://github.com/code2k13/philately-tool
+- code2k13 philately-tool license:
+  https://github.com/code2k13/philately-tool/blob/main/LICENSE

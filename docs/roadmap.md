@@ -9,6 +9,8 @@
 - Add agent operating docs and context update guardrails.
 - Document sample page observations, valuation method, and source strategy.
 
+Status: complete.
+
 ## Milestone 1.5: Product Definition
 
 - Define detailed MVP workflow and review states.
@@ -18,11 +20,19 @@
   valuations, and review state.
 - Define confidence scoring and escalation rules.
 
+Status: partly complete. The local-first app shape, batch HEIC input assumption,
+CSV/JSON exports, and automatic-first crop review policy are accepted. Catalog
+source policy, matching strategy, valuation scoring, and escalation rules still
+need deeper definition.
+
 ## Milestone 2: Image Intake
 
 - Upload multiple album page photos.
 - Store originals and normalized derivatives.
 - Return basic page analysis records.
+
+Status: initial implementation exists for local batch upload, HEIC-aware
+normalization, SQLite metadata, filesystem artifacts, and collection summaries.
 
 ## Milestone 3: Stamp Detection
 
@@ -30,6 +40,15 @@
 - Extract crops and bounding boxes.
 - Add manual correction hooks for missed or incorrect crops.
 - Handle rotated, overlapping, partial, and tightly spaced stamps.
+
+Status: prototype implementation exists. It can use an optional Ultralytics YOLO
+detector with a locally downloaded Apache-2.0 model and falls back to classical
+OpenCV segmentation when YOLO is unavailable. It extracts crops, stores bounding
+boxes, and flags uncertain crops for manual review. The YOLO threshold has been
+lowered to prioritize recall on the sample HEIC page, increasing detections from
+41 to 68 candidates while flagging low-confidence crops. It still needs
+iteration against more real HEIC album batches, better rotation/overlap
+handling, and detector tuning.
 
 ## Milestone 4: Vision Extraction
 
@@ -56,3 +75,13 @@
 - Build a review UI for confirming or editing matches.
 - Export CSV and JSON inventories.
 - Track reviewed versus unreviewed estimates.
+
+Status: partly started. A local visualizer can upload batches, inspect pages and
+crops, re-detect the current page, highlight the selected stamp on the full
+page, edit crop boxes in the selected-stamp inspector with drag handles or
+numeric fields, shade non-cropped areas during no-selection coverage review,
+filter the stamp list to crops pending review, remove false-positive crops,
+remove uploaded pages for clean re-upload, manually draw crops for missed
+stamps, rotate crops with an inspector drag handle, keep side lists scrolling
+independently, and export CSV/JSON. Candidate matching and valuation review are
+still placeholders.

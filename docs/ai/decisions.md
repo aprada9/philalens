@@ -127,3 +127,140 @@ risk.
 
 Consequences: Data-source code should preserve source attribution, retrieved
 date, licensing notes, and confidence.
+
+## 2026-06-29: Build A Local-First MVP
+
+Status: Accepted
+
+Context: The user clarified that Philalens should be local for now and should
+handle batches of around 80 mostly HEIC album page photos.
+
+Decision: Build the first MVP as a local FastAPI web app with browser UI,
+SQLite metadata storage, and filesystem storage for original uploads,
+normalized page derivatives, and stamp crops.
+
+Rationale: A local app is faster to iterate, avoids early hosting/privacy
+complexity, and fits the user's private album-photo workflow.
+
+Consequences: Runtime data lives under `data/local/` by default and is ignored
+by Git. Future hosted or multi-user deployment would need an explicit storage,
+auth, and privacy design.
+
+## 2026-06-29: Support Batch HEIC Intake In The MVP
+
+Status: Accepted
+
+Context: The user's real collection photos are mostly HEIC files and are likely
+uploaded in batches of around 80 page images.
+
+Decision: Add HEIC/HEIF support through `pillow-heif`, preserve original
+uploads, and create normalized JPEG working copies for browser display and
+segmentation.
+
+Rationale: HEIC support is required for the actual source material, while JPEG
+derivatives simplify downstream browser display and OpenCV processing.
+
+Consequences: Backend setup must install `pillow-heif`. Image-processing code
+should treat normalized-image coordinates as the first crop-review coordinate
+system.
+
+## 2026-06-29: Automatic Segmentation With Review Flags
+
+Status: Accepted
+
+Context: The user asked whether crop correction can be automatic, with manual
+correction only where the system thinks a crop may be inaccurate.
+
+Decision: Run automatic stamp-region detection first and mark uncertain,
+edge-touching, unusually shaped, too-small, or potentially merged regions as
+`needs_crop_review`.
+
+Rationale: Reviewing every crop manually would be slow for 80-page batches, but
+valuation should not proceed blindly from questionable segmentation.
+
+Consequences: The visualizer should prioritize flagged crops while keeping all
+crop boxes editable. Future segmentation improvements should reduce false
+review prompts without hiding uncertainty.
+
+## 2026-06-29: Add Optional YOLO Stamp Detector
+
+Status: Accepted
+
+Context: The first OpenCV cropper produced poor results on early manual review.
+The user supplied a Reddit link to an open-source autocropping tool. Review
+found the linked `code2k13/philately-tool` GitHub repository is Apache-2.0 and
+ships a trained `model.pt` detector.
+
+Decision: Add an optional Ultralytics YOLO detector path and a downloader script
+for the Apache-2.0 model, while keeping OpenCV as the default fallback when the
+model or optional dependency is unavailable.
+
+Rationale: A trained detector is more appropriate than generic thresholding for
+mixed album pages, but PyTorch/Ultralytics is too heavy to make mandatory for
+the base backend.
+
+Consequences: Install `pip install -e ".[dev,yolo]"` and run
+`python3 scripts/download_stamp_detector.py` to enable the better detector
+locally. The downloaded model and source metadata live under `data/local/models/`
+and remain ignored by Git.
+
+## 2026-06-30: Prioritize Segmentation Recall During Review
+
+Status: Accepted
+
+Context: User testing showed that the YOLO detector produced generally good
+crops but missed full rows on the sample HEIC page, detecting 41 stamps out of
+about 68.
+
+Decision: Lower the default YOLO confidence threshold to `0.1`, keep
+low-confidence detections visible, and mark them with `low_detector_confidence`
+and `needs_crop_review` instead of dropping them.
+
+Rationale: For a review-first inventory tool, a questionable crop is better than
+a silently missing stamp. Manual review can reject weak detections, but it
+cannot review stamps that never appear.
+
+Consequences: New uploads and page re-detection should recover more candidates
+but will flag more crops for review. Detector thresholds and crop margins should
+be tuned against more real HEIC pages before valuation depends on segmentation.
+
+## 2026-06-30: Split Coverage Review From Crop Editing
+
+Status: Accepted
+
+Context: User testing showed that crop outlines alone made it hard to tell
+whether stamps in the middle of a page had been missed, and crop editing should
+stay in the per-stamp view rather than cluttering the full page.
+
+Decision: Treat no selected stamp as a coverage-review mode that shades areas
+outside detected crop boxes. Keep full-page overlays for selection/location and
+selected-stamp highlighting. Keep crop resizing in the inspector, and add review
+filtering plus delete controls for false-positive crops and uploaded pages.
+
+Rationale: Batch review needs two different jobs: finding missed detections on
+the whole page and correcting one detected crop precisely. Combining both jobs
+on the full image makes review harder.
+
+Consequences: The visualizer now starts page review without an auto-selected
+stamp, exposes a quick `Review only` filter, and persists crop/page removal via
+API endpoints so exports match the reviewed state.
+
+## 2026-06-30: Persist Manual Crops And Crop Rotation
+
+Status: Accepted
+
+Context: The user needs to add stamps missed by automatic detection and handle
+stamps placed at arbitrary angles on album pages.
+
+Decision: Add manual crop creation from the full-page view by dragging a new
+crop rectangle. Add `rotation_degrees` to crop records and exports. Keep
+rotation as an interactive inspector drag handle, not a numeric input field.
+
+Rationale: Missed stamps are found while reviewing the full page, but precise
+geometry correction belongs in the per-stamp inspector. Rotation must persist so
+reloaded projects and CSV/JSON exports reflect reviewed crop geometry.
+
+Consequences: The local SQLite schema now migrates crops with a
+`rotation_degrees` column. Crop image generation samples a rotated rectangle
+when rotation is nonzero. Future crop-review improvements should account for
+rotated crop geometry in overlays, coverage masks, and downstream vision.

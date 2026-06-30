@@ -30,9 +30,11 @@ replacement. Estimates must carry evidence and confidence.
 
 ## Current Phase
 
-The project is in foundation and product-definition mode. The codebase currently
-contains a minimal Python/FastAPI backend skeleton, core data models, initial
-docs, and agent context infrastructure. Do not assume segmentation, AI vision,
+The project is in local MVP foundation mode. The codebase contains a Python /
+FastAPI backend with local SQLite/filesystem persistence, HEIC-aware batch image
+intake, normalized page derivatives, automatic stamp segmentation with optional
+YOLO and OpenCV fallback paths, CSV/JSON exports, and a browser visualizer for
+page-by-page and stamp-by-stamp review. Do not assume AI vision extraction,
 catalog matching, market retrieval, or valuation are implemented yet.
 
 ## Engineering Principles
@@ -93,9 +95,16 @@ pytest
 uvicorn philalens.api:app --reload
 ```
 
+The local visualizer is served at `http://127.0.0.1:8000/`. Runtime collection
+data is stored under `data/local/` by default and is intentionally ignored by
+Git.
+
+The better cropper is optional because it uses Ultralytics/PyTorch. To enable it,
+install `pip install -e ".[dev,yolo]"` from `backend/`, then run
+`python3 scripts/download_stamp_detector.py` from the repository root.
+
 ## When Unsure
 
 If requirements are unclear, capture the uncertainty in `docs/ai/context.md` or
 `docs/ai/session-handoff.md`, then make the smallest reversible implementation
 that improves the project.
-

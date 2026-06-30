@@ -19,6 +19,12 @@ def build_empty_page_analysis(page_id: str, image_filename: str) -> PageAnalysis
 
 def summarize_collection(pages: list[PageAnalysis]) -> CollectionSummary:
     stamp_count = sum(len(page.stamps) for page in pages)
+    needs_crop_review_count = sum(
+        1
+        for page in pages
+        for stamp in page.stamps
+        if stamp.observation.review_state == "needs_crop_review"
+    )
     low_values = [
         stamp.estimated_value_low
         for page in pages
@@ -37,5 +43,5 @@ def summarize_collection(pages: list[PageAnalysis]) -> CollectionSummary:
         stamp_count=stamp_count,
         estimated_value_low=sum(low_values) if low_values else None,
         estimated_value_high=sum(high_values) if high_values else None,
+        needs_crop_review_count=needs_crop_review_count,
     )
-

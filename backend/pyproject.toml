@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "philalens"
 version = "0.1.0"
 description = "AI-assisted stamp collection analyzer and valuation research tool."
-readme = "../README.md"
+readme = { text = "Local FastAPI backend for Philalens stamp collection intake, segmentation, review, and export.", content-type = "text/markdown" }
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "python-multipart>=0.0.9",
   "pillow>=10.4",
+  "pillow-heif>=0.18",
   "opencv-python-headless>=4.10",
   "numpy>=2.0",
   "httpx>=0.27",
@@ -25,6 +26,9 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10"
 ]
+yolo = [
+  "ultralytics>=8.3"
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -33,4 +37,3 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-

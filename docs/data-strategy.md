@@ -6,6 +6,20 @@
 - Store source attribution with every match and valuation.
 - Separate catalog identity from market price evidence.
 - Keep confidence explicit when the source data is weak.
+- Keep user-uploaded image artifacts separate from catalog or market datasets.
+
+## Local Project Data
+
+The local MVP stores runtime project data under `data/local/` by default. This
+includes:
+
+- `philalens.sqlite` for collection, page, and crop metadata
+- original uploaded album page images
+- normalized JPEG page images for browser display and segmentation
+- crop images for detected stamps
+
+These local artifacts are ignored by Git. They should not be treated as catalog
+or market data and should not be committed without explicit user intent.
 
 ## Candidate Source Types
 

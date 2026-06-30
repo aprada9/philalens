@@ -14,7 +14,7 @@ A collector or inheritor of a stamp collection who wants an initial understandin
 
 ## Inputs
 
-- Album page photos.
+- Batch album page photos, mostly HEIC for the first user collection.
 - Optional manual notes.
 - Optional catalog exports or user-provided reference data.
 
@@ -25,7 +25,8 @@ A collector or inheritor of a stamp collection who wants an initial understandin
 - Confidence scores and evidence.
 - Estimated value range per stamp.
 - Collection-level summary.
-- Exportable CSV or JSON inventory.
+- Exportable CSV and JSON inventory.
+- Local visualizer for page-by-page and stamp-by-stamp review.
 
 ## Core Product Position
 
@@ -33,6 +34,11 @@ Philalens should optimize for triage and evidence. The first valuable product is
 not an exact appraisal engine; it is a workflow that separates common low-value
 material from possible outliers, explains the evidence, and tells the user when
 better images or expert review are needed.
+
+The first implementation is local-first: it stores uploaded page images,
+normalized derivatives, crop images, and SQLite project state on the user's
+machine. The browser UI should support batch review and correction before later
+AI description, matching, and valuation stages are trusted.
 
 ## Non-goals
 

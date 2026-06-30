@@ -6,12 +6,14 @@ Philalens is designed for collections where each album page photo contains multi
 
 ## MVP Workflow
 
-1. Upload album page photos.
-2. Detect and crop individual stamps from each page.
-3. Extract visual signals such as country, text, denomination, color, cancellation marks, perforation hints, and condition.
-4. Match each stamp against catalog and market data sources.
-5. Estimate a value range with confidence and source evidence.
-6. Produce a collection-level summary and exportable inventory.
+1. Upload album page photos in batches, including mostly HEIC collections.
+2. Store originals locally and create normalized working images.
+3. Detect and crop individual stamps from each page.
+4. Review detected crops in the local browser visualizer, with uncertain crops flagged for correction.
+5. Extract visual signals such as country, text, denomination, color, cancellation marks, perforation hints, and condition.
+6. Match each stamp against catalog and market data sources.
+7. Estimate a value range with confidence and source evidence.
+8. Produce a collection-level summary and CSV/JSON exports.
 
 ## Valuation Note
 
@@ -63,13 +65,53 @@ uvicorn philalens.api:app --reload
 Then open:
 
 ```text
+http://127.0.0.1:8000/
+```
+
+The OpenAPI docs remain available at:
+
+```text
 http://127.0.0.1:8000/docs
 ```
 
+By default, local runtime data is stored under `data/local/`, including the
+SQLite database, original uploads, normalized JPEG page images, and crop images.
+
+## Optional YOLO Stamp Detector
+
+The baseline app can segment stamps with OpenCV, but the better local path is an
+optional YOLO detector adapted from the Apache-2.0
+[`code2k13/philately-tool`](https://github.com/code2k13/philately-tool)
+approach.
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install -e ".[dev,yolo]"
+cd ..
+python3 scripts/download_stamp_detector.py
+```
+
+With the downloaded model at the default path, `PHILALENS_STAMP_DETECTOR=auto`
+uses YOLO for new uploads and falls back to OpenCV when the model or dependency
+is unavailable. The default YOLO confidence is intentionally low (`0.1`) for
+review coverage; low-confidence detections are flagged for crop review instead
+of being silently dropped. Existing pages can be processed again with the
+visualizer's `Re-detect page` control.
+
+The local visualizer supports crop review in two modes: no selected stamp shows
+a shaded coverage view for spotting stamps outside detected crop boxes, while a
+selected stamp opens inspector-based crop resizing with corner drag handles and
+numeric fields. It also includes a quick `Review only` filter plus controls to
+remove false-positive crop boxes or uploaded pages that should be re-uploaded.
+Missed stamps can be added by drawing a manual crop on the full page, and
+rotated stamps can be corrected with an inspector drag handle; crop rotation is
+saved in local storage and exports.
+
 ## Early Development Priorities
 
-- Build robust page-to-stamp segmentation.
-- Define a normalized stamp inventory schema.
+- Improve robust page-to-stamp segmentation.
+- Expand the normalized stamp inventory schema.
 - Collect allowed catalog and market data sources.
 - Add AI vision extraction with evidence capture.
 - Implement candidate matching and confidence scoring.
