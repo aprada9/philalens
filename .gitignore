@@ -20,6 +20,8 @@ venv/
 # Data and generated assets
 data/*
 !data/.gitkeep
+backend/cache/
+backend/collections/
 notebooks/*
 !notebooks/.gitkeep
 uploads/
@@ -31,4 +33,3 @@ outputs/
 .DS_Store
 .idea/
 .vscode/
-

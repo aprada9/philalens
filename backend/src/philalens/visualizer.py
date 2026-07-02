@@ -1,6 +1,5 @@
 """Local browser visualizer."""
 
-
 VISUALIZER_HTML = """
 <!doctype html>
 <html lang="en">
@@ -172,8 +171,14 @@ VISUALIZER_HTML = """
     .list-toolbar {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 8px;
+    }
+    .list-toolbar button {
+      min-height: 30px;
+      padding: 4px 8px;
+      font-size: 12px;
     }
     .toggle {
       display: inline-flex;
@@ -212,12 +217,45 @@ VISUALIZER_HTML = """
       border-color: #bed0d5;
       background: #eaf3f4;
     }
+    .stamp-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: stretch;
+      gap: 4px;
+      min-width: 0;
+    }
+    .stamp-select {
+      display: grid;
+      place-items: center;
+      min-width: 34px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .stamp-main {
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      gap: 4px;
+      padding: 6px 8px;
+    }
+    .stamp-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .stamp-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
     .badge {
       display: inline-flex;
       align-items: center;
       border-radius: 999px;
       padding: 2px 7px;
-      font-size: 12px;
+      font-size: 11px;
       border: 1px solid var(--line);
       color: var(--muted);
       white-space: nowrap;
@@ -231,6 +269,118 @@ VISUALIZER_HTML = """
       color: var(--ok);
       border-color: #a7d6b5;
       background: #eefaf1;
+    }
+    .badge.hot {
+      color: #7b2c00;
+      border-color: #e6a05b;
+      background: #fff0dd;
+    }
+    .badge.info {
+      color: #315da8;
+      border-color: #adc4ee;
+      background: #eef4ff;
+    }
+    .badge.neutral {
+      color: var(--muted);
+      background: #f3f5f7;
+    }
+    .settings-panel {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(24, 32, 42, .38);
+      z-index: 20;
+      padding: 18px;
+    }
+    .settings-panel.open {
+      display: grid;
+    }
+    .settings-dialog {
+      width: min(640px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.22);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .settings-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .cost-dashboard {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      background: #f8fafb;
+    }
+    .cost-dashboard h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .cost-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .cost-metric {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #fff;
+    }
+    .cost-metric strong {
+      display: block;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .cost-metric span,
+    .cost-note {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .progress-panel {
+      display: none;
+      grid-template-columns: 52px 1fr;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #eef7f8;
+    }
+    .progress-panel.active {
+      display: grid;
+    }
+    .progress-thumb {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+      background: #111;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+    .progress-copy {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .progress-label {
+      font-size: 13px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .progress-meter {
+      width: 100%;
+      height: 10px;
+      accent-color: var(--accent);
     }
     .page-frame {
       position: relative;
@@ -437,13 +587,22 @@ VISUALIZER_HTML = """
         <button class="primary" type="submit">Upload batch</button>
         <select id="collectionSelect"></select>
         <button id="redetectPage" type="button">Re-detect page</button>
+        <button id="evaluateCollection" type="button">Evaluate</button>
         <button id="addCrop" type="button">Add crop</button>
         <button id="deletePage" class="danger" type="button">Remove page</button>
         <button id="jsonExport" type="button">JSON</button>
         <button id="csvExport" type="button">CSV</button>
+        <button id="settingsButton" type="button">Settings</button>
       </form>
       <div id="status" class="status">Ready</div>
     </header>
+    <div id="evaluationProgress" class="progress-panel" aria-live="polite">
+      <img id="evaluationProgressImage" class="progress-thumb" alt="">
+      <div class="progress-copy">
+        <div id="evaluationProgressLabel" class="progress-label">Evaluation queued</div>
+        <progress id="evaluationProgressBar" class="progress-meter" max="1" value="0"></progress>
+      </div>
+    </div>
     <main>
       <aside>
         <div class="band summary" id="summary"></div>
@@ -454,6 +613,11 @@ VISUALIZER_HTML = """
           <div class="list-toolbar">
             <label class="toggle"><input id="reviewOnly" type="checkbox"> Review only</label>
             <button id="clearStamp" type="button">Clear</button>
+            <button id="selectVisible" type="button">Select visible</button>
+            <button id="clearSelected" type="button">Clear selected</button>
+            <button id="markReadySelected" type="button">Mark ready</button>
+            <button id="evaluateSelected" type="button">Evaluate selected</button>
+            <button id="deleteSelected" class="danger" type="button">Remove selected</button>
           </div>
           <div class="list scroll-list" id="stampList"></div>
         </div>
@@ -470,22 +634,71 @@ VISUALIZER_HTML = """
       </section>
     </main>
   </div>
+  <div id="settingsPanel" class="settings-panel" aria-hidden="true">
+    <form id="settingsForm" class="settings-dialog">
+      <h2>Settings</h2>
+      <div class="field">
+        <label for="visionProvider">Vision provider</label>
+        <select id="visionProvider" name="visionProvider">
+          <option value="none">None</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="openaiModel">OpenAI model</label>
+        <input id="openaiModel" name="openaiModel" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="openaiDetail">Image detail</label>
+        <select id="openaiDetail" name="openaiDetail">
+          <option value="low">Low</option>
+          <option value="high">High</option>
+          <option value="auto">Auto</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="openaiKey">OpenAI API key</label>
+        <input id="openaiKey" name="openaiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+      </div>
+      <div id="settingsKeyState" class="status"></div>
+      <div id="settingsCostDashboard" class="cost-dashboard"></div>
+      <div class="settings-actions">
+        <button id="closeSettings" type="button">Cancel</button>
+        <button class="primary" type="submit">Save settings</button>
+      </div>
+    </form>
+  </div>
   <script>
     const state = {
       collections: [],
       collection: null,
       pageIndex: 0,
       stampIndex: null,
+      selectedCropIds: new Set(),
       reviewOnly: false,
       addCropMode: false,
       drag: null
     };
 
     const statusEl = document.getElementById("status");
+    const evaluationProgress = document.getElementById("evaluationProgress");
+    const evaluationProgressImage = document.getElementById("evaluationProgressImage");
+    const evaluationProgressLabel = document.getElementById("evaluationProgressLabel");
+    const evaluationProgressBar = document.getElementById("evaluationProgressBar");
     const collectionSelect = document.getElementById("collectionSelect");
     const redetectPageButton = document.getElementById("redetectPage");
+    const evaluateCollectionButton = document.getElementById("evaluateCollection");
+    const evaluateSelectedButton = document.getElementById("evaluateSelected");
+    const deleteSelectedButton = document.getElementById("deleteSelected");
+    const selectVisibleButton = document.getElementById("selectVisible");
+    const clearSelectedButton = document.getElementById("clearSelected");
+    const markReadySelectedButton = document.getElementById("markReadySelected");
     const addCropButton = document.getElementById("addCrop");
     const deletePageButton = document.getElementById("deletePage");
+    const settingsButton = document.getElementById("settingsButton");
+    const settingsPanel = document.getElementById("settingsPanel");
+    const settingsForm = document.getElementById("settingsForm");
+    const settingsCostDashboard = document.getElementById("settingsCostDashboard");
     const reviewOnlyCheckbox = document.getElementById("reviewOnly");
     const clearStampButton = document.getElementById("clearStamp");
     const pageFrame = document.getElementById("pageFrame");
@@ -496,6 +709,59 @@ VISUALIZER_HTML = """
 
     function setStatus(message) {
       statusEl.textContent = message;
+    }
+
+    function showEvaluationProgress(job) {
+      const current = Number(job.current || 0);
+      const total = Math.max(1, Number(job.total || 0));
+      evaluationProgress.classList.add("active");
+      evaluationProgressBar.max = total;
+      evaluationProgressBar.value = Math.min(current, total);
+      const costText = evaluationCostText(job.cost_actual || job.cost_estimate);
+      evaluationProgressLabel.textContent = `${job.message || "Evaluating"} (${current}/${job.total || "?"})${costText ? ` | ${costText}` : ""}`;
+      if (job.current_crop_image_url) {
+        evaluationProgressImage.src = job.current_crop_image_url;
+        evaluationProgressImage.alt = job.current_crop_label || "Current stamp crop";
+        evaluationProgressImage.style.visibility = "visible";
+      } else {
+        evaluationProgressImage.removeAttribute("src");
+        evaluationProgressImage.alt = "";
+        evaluationProgressImage.style.visibility = "hidden";
+      }
+    }
+
+    function hideEvaluationProgress() {
+      evaluationProgress.classList.remove("active");
+      evaluationProgressImage.removeAttribute("src");
+      evaluationProgressBar.value = 0;
+    }
+
+    function formatUsd(value) {
+      if (typeof value !== "number" || !Number.isFinite(value)) return "unknown";
+      if (value === 0) return "$0.00";
+      return value < 0.01 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`;
+    }
+
+    function evaluationCostText(costPayload) {
+      if (!costPayload) return "";
+      const callCount = costPayload.api_call_count ?? costPayload.billable_api_call_count;
+      if (typeof callCount === "number" && callCount <= 0) return "";
+      const actual = costPayload.total_cost_usd;
+      if (typeof actual === "number") {
+        return `API cost ${formatUsd(actual)}`;
+      }
+      const known = costPayload.known_total_cost_usd;
+      if (typeof known === "number") {
+        return `known API cost ${formatUsd(known)}`;
+      }
+      const estimate = costPayload.estimated_total_cost_usd;
+      if (typeof estimate === "number") {
+        return `est. API cost ${formatUsd(estimate)}`;
+      }
+      if (costPayload.billable_api_call_count > 0 || costPayload.api_call_count > 0) {
+        return "API cost unknown";
+      }
+      return "";
     }
 
     async function requestJson(url, options = {}) {
@@ -530,6 +796,7 @@ VISUALIZER_HTML = """
       if (resetSelection) {
         state.pageIndex = 0;
         state.stampIndex = null;
+        state.selectedCropIds.clear();
         state.addCropMode = false;
       } else {
         state.pageIndex = Math.min(state.pageIndex, Math.max(0, state.collection.pages.length - 1));
@@ -538,6 +805,7 @@ VISUALIZER_HTML = """
           state.stampIndex = Math.min(state.stampIndex, Math.max(0, (page?.stamps?.length || 1) - 1));
         }
       }
+      pruneSelectedCropIds();
       collectionSelect.value = collectionId;
       render();
     }
@@ -570,6 +838,12 @@ VISUALIZER_HTML = """
 
     function updateControls() {
       redetectPageButton.disabled = !currentPage();
+      evaluateCollectionButton.disabled = !state.collection;
+      evaluateSelectedButton.disabled = selectedCropIds().length === 0;
+      deleteSelectedButton.disabled = selectedCropIds().length === 0;
+      selectVisibleButton.disabled = visibleStampIds().length === 0;
+      clearSelectedButton.disabled = selectedCropIds().length === 0;
+      markReadySelectedButton.disabled = selectedCropIds().length === 0;
       addCropButton.disabled = !currentPage();
       addCropButton.classList.toggle("active", state.addCropMode);
       addCropButton.textContent = state.addCropMode ? "Adding crop" : "Add crop";
@@ -594,16 +868,39 @@ VISUALIZER_HTML = """
       return stamp.review_state === "needs_crop_review";
     }
 
+    function selectedCropIds() {
+      if (!state.collection) return [];
+      const validIds = new Set(state.collection.pages.flatMap(page => page.stamps.map(stamp => stamp.crop_id)));
+      return Array.from(state.selectedCropIds).filter(cropId => validIds.has(cropId));
+    }
+
+    function visibleStampIds() {
+      const page = currentPage();
+      if (!page) return [];
+      return page.stamps
+        .filter(stamp => !state.reviewOnly || stampNeedsReview(stamp))
+        .map(stamp => stamp.crop_id);
+    }
+
+    function pruneSelectedCropIds() {
+      state.selectedCropIds = new Set(selectedCropIds());
+    }
+
     function renderSummary() {
       if (!state.collection) {
         summary.innerHTML = `<div class="metric"><strong>0</strong><span>pages</span></div><div class="metric"><strong>0</strong><span>stamps</span></div><div class="metric"><strong>0</strong><span>review</span></div>`;
         return;
       }
       const data = state.collection.collection;
+      const evaluation = state.collection.latest_evaluation_summary;
+      const evaluated = evaluation ? `${evaluation.evaluated_stamp_count}/${data.stamp_count}` : "0";
+      const attention = evaluation?.attention_recommended_count || 0;
       summary.innerHTML = `
         <div class="metric"><strong>${data.page_count}</strong><span>pages</span></div>
         <div class="metric"><strong>${data.stamp_count}</strong><span>stamps</span></div>
         <div class="metric"><strong>${data.needs_crop_review_count}</strong><span>crop review</span></div>
+        <div class="metric"><strong>${evaluated}</strong><span>evaluated</span></div>
+        <div class="metric"><strong>${attention}</strong><span>attention</span></div>
       `;
     }
 
@@ -637,15 +934,75 @@ VISUALIZER_HTML = """
       }
       stamps.forEach(({ stamp, index }) => {
         const needsReview = stampNeedsReview(stamp);
+        const selected = state.selectedCropIds.has(stamp.crop_id);
+        const row = document.createElement("div");
+        row.className = "stamp-row";
+        const checkbox = document.createElement("input");
+        checkbox.className = "stamp-select";
+        checkbox.type = "checkbox";
+        checkbox.checked = selected;
+        checkbox.title = `Select stamp ${stamp.crop_index}`;
+        checkbox.addEventListener("click", (event) => {
+          event.stopPropagation();
+          toggleCropSelection(stamp.crop_id, checkbox.checked);
+        });
         const button = document.createElement("button");
-        button.className = `row ${index === state.stampIndex ? "active" : ""}`;
-        button.innerHTML = `<span>Stamp ${stamp.crop_index}</span><span class="badge ${needsReview ? "warn" : "ok"}">${stamp.review_state}</span>`;
+        button.className = `row stamp-main ${index === state.stampIndex ? "active" : ""}`;
+        button.innerHTML = `
+          <span class="stamp-title">Stamp ${stamp.crop_index}</span>
+          <span class="stamp-tags">
+            <span class="badge ${bucketClass(stamp.valuation?.value_bucket)}">Eval: ${bucketLabel(stamp.valuation?.value_bucket)}</span>
+            <span class="badge ${needsReview ? "warn" : "ok"}">Crop: ${cropLabel(stamp.review_state)}</span>
+          </span>
+        `;
         button.addEventListener("click", () => {
           state.stampIndex = index;
           render();
         });
-        stampList.appendChild(button);
+        row.appendChild(checkbox);
+        row.appendChild(button);
+        stampList.appendChild(row);
       });
+    }
+
+    function toggleCropSelection(cropId, selected) {
+      if (selected) {
+        state.selectedCropIds.add(cropId);
+      } else {
+        state.selectedCropIds.delete(cropId);
+      }
+      updateControls();
+    }
+
+    function selectVisibleStamps() {
+      visibleStampIds().forEach(cropId => state.selectedCropIds.add(cropId));
+      renderStamps();
+      updateControls();
+    }
+
+    function clearSelectedStamps() {
+      state.selectedCropIds.clear();
+      renderStamps();
+      updateControls();
+    }
+
+    function bucketLabel(bucket) {
+      if (!bucket) return "not evaluated";
+      return formatBucket(bucket);
+    }
+
+    function cropLabel(reviewState) {
+      if (reviewState === "needs_crop_review") return "needs review";
+      if (reviewState === "unreviewed") return "ready";
+      return formatBucket(reviewState);
+    }
+
+    function bucketClass(bucket) {
+      if (bucket === "possibly_interesting" || bucket === "needs_expert_check") return "hot";
+      if (bucket === "needs_source_matching" || bucket === "not_enough_evidence") return "info";
+      if (bucket === "likely_common") return "ok";
+      if (bucket === "needs_better_image") return "warn";
+      return "neutral";
     }
 
     function renderPageFrame() {
@@ -1092,14 +1449,42 @@ VISUALIZER_HTML = """
             <div>${stamp.description}</div>
           </div>
           <div class="field full">
+            <label>Observation</label>
+            <div>${formatObservation(stamp.observation)}</div>
+          </div>
+          <div class="field full">
             <label>Valuation</label>
-            <div>${stamp.valuation.status}</div>
+            <div>${formatValuation(stamp.valuation)}</div>
           </div>
         </div>
       `;
       document.getElementById("bboxForm").addEventListener("submit", saveCropBox);
       document.getElementById("deleteCrop").addEventListener("click", deleteCurrentCrop);
       setupCropEditor();
+    }
+
+    function formatObservation(observation) {
+      if (!observation || observation.status !== "available") return "Not started";
+      const hints = [
+        observation.issuer_hint,
+        observation.denomination_hint,
+        observation.design_subject,
+      ].filter(Boolean).join("; ");
+      const warnings = observation.image_quality_warnings?.length
+        ? `; warnings: ${observation.image_quality_warnings.join(", ")}`
+        : "";
+      return `${hints || "Observation recorded"}${warnings}`;
+    }
+
+    function formatValuation(valuation) {
+      if (!valuation || valuation.status !== "available") return valuation?.status || "not_available";
+      const bucket = formatBucket(valuation.value_bucket || "not_enough_evidence");
+      const action = valuation.recommended_next_action || "No action recorded";
+      return `${bucket}; ${action}`;
+    }
+
+    function formatBucket(bucket) {
+      return String(bucket).replaceAll("_", " ");
     }
 
     function setupCropEditor() {
@@ -1221,11 +1606,52 @@ VISUALIZER_HTML = """
       try {
         setStatus("Removing crop...");
         state.collection = await requestJson(`/api/crops/${stamp.crop_id}`, { method: "DELETE" });
+        state.selectedCropIds.delete(stamp.crop_id);
         state.stampIndex = null;
         state.addCropMode = false;
         await refreshCollectionOptions();
         render();
         setStatus("Crop removed");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function deleteSelectedCrops() {
+      const cropIds = selectedCropIds();
+      if (!cropIds.length) return;
+      if (!confirm(`Remove ${cropIds.length} selected crop${cropIds.length === 1 ? "" : "s"}?`)) return;
+      try {
+        setStatus(`Removing ${cropIds.length} selected crop${cropIds.length === 1 ? "" : "s"}...`);
+        state.collection = await requestJson("/api/crops/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ crop_ids: cropIds })
+        });
+        cropIds.forEach(cropId => state.selectedCropIds.delete(cropId));
+        state.stampIndex = null;
+        state.addCropMode = false;
+        await refreshCollectionOptions();
+        render();
+        setStatus("Selected crops removed");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function markSelectedCropsReady() {
+      const cropIds = selectedCropIds();
+      if (!cropIds.length) return;
+      try {
+        setStatus(`Marking ${cropIds.length} selected crop${cropIds.length === 1 ? "" : "s"} ready...`);
+        state.collection = await requestJson("/api/crops/mark-ready", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ crop_ids: cropIds })
+        });
+        pruneSelectedCropIds();
+        render();
+        setStatus("Selected crops marked ready");
       } catch (error) {
         setStatus(error.message);
       }
@@ -1240,10 +1666,152 @@ VISUALIZER_HTML = """
         state.collection = await requestJson(`/api/pages/${page.page_id}`, { method: "DELETE" });
         state.pageIndex = Math.min(state.pageIndex, Math.max(0, state.collection.pages.length - 1));
         state.stampIndex = null;
+        pruneSelectedCropIds();
         state.addCropMode = false;
         await refreshCollectionOptions();
         render();
         setStatus("Page removed");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function evaluateSelectedCrops() {
+      if (!state.collection) return;
+      const cropIds = selectedCropIds();
+      if (!cropIds.length) return;
+      await startEvaluation(cropIds);
+    }
+
+    async function startEvaluation(cropIds = null) {
+      if (!state.collection) return;
+      const collectionId = state.collection.collection.collection_id;
+      const countLabel = cropIds?.length
+        ? `${cropIds.length} selected stamp${cropIds.length === 1 ? "" : "s"}`
+        : "collection";
+      try {
+        const costEstimate = await estimateEvaluationCost(collectionId, cropIds);
+        const costText = evaluationCostText(costEstimate);
+        setStatus(`Evaluating ${countLabel}${costText ? ` (${costText})` : ""}...`);
+        showEvaluationProgress({
+          status: "queued",
+          current: 0,
+          total: cropIds?.length || 0,
+          message: "Queued evaluation",
+          cost_estimate: costEstimate
+        });
+        const job = await requestJson(`/api/collections/${collectionId}/evaluate/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ crop_ids: cropIds || [] })
+        });
+        await pollEvaluationJob(job.job_id, collectionId);
+      } catch (error) {
+        hideEvaluationProgress();
+        setStatus(error.message);
+      }
+    }
+
+    async function pollEvaluationJob(jobId, collectionId) {
+      while (true) {
+        const job = await requestJson(`/api/evaluation-jobs/${jobId}`);
+        showEvaluationProgress(job);
+        if (job.status === "completed") {
+          state.collection = await requestJson(`/api/collections/${collectionId}`);
+          await refreshCollectionOptions();
+          pruneSelectedCropIds();
+          render();
+          setStatus(job.message || "Evaluation complete");
+          setTimeout(hideEvaluationProgress, 1200);
+          return;
+        }
+        if (job.status === "failed") {
+          hideEvaluationProgress();
+          throw new Error(job.error || job.message || "Evaluation failed");
+        }
+        await sleep(500);
+      }
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function estimateEvaluationCost(collectionId, cropIds = null) {
+      return requestJson(`/api/collections/${collectionId}/evaluation-cost-estimate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crop_ids: cropIds || [] })
+      });
+    }
+
+    function renderSettingsCostDashboard(dashboard) {
+      if (!dashboard) {
+        settingsCostDashboard.innerHTML = `<h3>API cost</h3><div class="cost-note">No cost data recorded yet.</div>`;
+        return;
+      }
+      const latest = dashboard.latest_run;
+      const latestCost = latest
+        ? formatUsd(
+            typeof latest.actual_cost_usd === "number"
+              ? latest.actual_cost_usd
+              : latest.estimated_cost_usd
+          )
+        : "none";
+      settingsCostDashboard.innerHTML = `
+        <h3>API cost</h3>
+        <div class="cost-grid">
+          <div class="cost-metric"><strong>${formatUsd(dashboard.total_actual_cost_usd)}</strong><span>recorded spend</span></div>
+          <div class="cost-metric"><strong>${dashboard.api_call_count || 0}</strong><span>API calls</span></div>
+          <div class="cost-metric"><strong>${dashboard.total_tokens || 0}</strong><span>tokens</span></div>
+          <div class="cost-metric"><strong>${dashboard.evaluation_run_count || 0}</strong><span>runs</span></div>
+          <div class="cost-metric"><strong>${latestCost}</strong><span>latest run</span></div>
+          <div class="cost-metric"><strong>${dashboard.unknown_cost_call_count || 0}</strong><span>unknown cost calls</span></div>
+        </div>
+        <div class="cost-note">${dashboard.pricing_note || ""}</div>
+      `;
+    }
+
+    async function openSettings() {
+      try {
+        const settings = await requestJson("/api/settings");
+        document.getElementById("visionProvider").value = settings.vision_provider || "none";
+        document.getElementById("openaiModel").value = settings.openai_vision_model || "gpt-4.1-mini";
+        document.getElementById("openaiDetail").value = settings.openai_vision_detail || "high";
+        document.getElementById("openaiKey").value = "";
+        document.getElementById("settingsKeyState").textContent = settings.openai_api_key_set
+          ? "OpenAI key is saved locally. Leave blank to keep it."
+          : "No OpenAI key saved.";
+        renderSettingsCostDashboard(settings.cost_dashboard);
+        settingsPanel.classList.add("open");
+        settingsPanel.setAttribute("aria-hidden", "false");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    function closeSettings() {
+      settingsPanel.classList.remove("open");
+      settingsPanel.setAttribute("aria-hidden", "true");
+    }
+
+    async function saveSettings(event) {
+      event.preventDefault();
+      const payload = {
+        vision_provider: document.getElementById("visionProvider").value,
+        openai_vision_model: document.getElementById("openaiModel").value,
+        openai_vision_detail: document.getElementById("openaiDetail").value,
+      };
+      const key = document.getElementById("openaiKey").value.trim();
+      if (key) payload.openai_api_key = key;
+      try {
+        await requestJson("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        closeSettings();
+        setStatus("Settings saved");
       } catch (error) {
         setStatus(error.message);
       }
@@ -1262,6 +1830,7 @@ VISUALIZER_HTML = """
       });
       setStatus("Upload complete");
       state.addCropMode = false;
+      state.selectedCropIds.clear();
       await loadCollections();
       await loadCollection(collection.collection.collection_id);
     });
@@ -1300,12 +1869,29 @@ VISUALIZER_HTML = """
       setStatus("Re-detecting page...");
       state.collection = await requestJson(`/api/pages/${page.page_id}/redetect`, { method: "POST" });
       state.stampIndex = null;
+      pruneSelectedCropIds();
       state.addCropMode = false;
       render();
       setStatus(`Detected ${currentPage()?.stamps?.length || 0} stamps`);
     });
 
+    evaluateCollectionButton.addEventListener("click", async () => {
+      if (!state.collection) return;
+      await startEvaluation();
+    });
+
+    selectVisibleButton.addEventListener("click", selectVisibleStamps);
+    clearSelectedButton.addEventListener("click", clearSelectedStamps);
+    markReadySelectedButton.addEventListener("click", markSelectedCropsReady);
+    evaluateSelectedButton.addEventListener("click", evaluateSelectedCrops);
+    deleteSelectedButton.addEventListener("click", deleteSelectedCrops);
     deletePageButton.addEventListener("click", deleteCurrentPage);
+    settingsButton.addEventListener("click", openSettings);
+    document.getElementById("closeSettings").addEventListener("click", closeSettings);
+    settingsPanel.addEventListener("click", (event) => {
+      if (event.target === settingsPanel) closeSettings();
+    });
+    settingsForm.addEventListener("submit", saveSettings);
 
     document.getElementById("jsonExport").addEventListener("click", () => {
       if (!state.collection) return;

@@ -1,6 +1,6 @@
 # Philalens Agent Context
 
-Last updated: 2026-06-30
+Last updated: 2026-07-02
 
 ## User Intent
 
@@ -43,15 +43,26 @@ The repository contains:
 - a Python/FastAPI backend under `backend/`
 - dataclass-based domain models in `backend/src/philalens/models.py`
 - local SQLite/filesystem persistence in `backend/src/philalens/storage.py`
+- durable SQLite evaluation records for runs, observations, candidates, source
+  evidence, valuations, and embedding metadata
 - HEIC-aware image normalization in `backend/src/philalens/imaging.py`
 - optional YOLO stamp segmentation plus OpenCV fallback in
   `backend/src/philalens/segmentation.py`
+- a crop-readiness evaluation skeleton in `backend/src/philalens/evaluation.py`
+- a strict `stamp-observation-v1` schema and parser in
+  `backend/src/philalens/observation_schema.py`
+- an optional OpenAI vision adapter in `backend/src/philalens/vision.py`,
+  disabled unless `PHILALENS_VISION_PROVIDER=openai` is configured
+- OpenAI evaluation cost tracking in `backend/src/philalens/costing.py`
+- local visible-observation value triage in `backend/src/philalens/triage.py`
 - CSV/JSON export shaping in `backend/src/philalens/exports.py`
 - a local browser visualizer in `backend/src/philalens/visualizer.py`
 - a downloader for the optional Apache-2.0 detector model in
   `scripts/download_stamp_detector.py`
 - API endpoints in `backend/src/philalens/api.py` for collection upload,
-  collection review, media serving, crop correction, and exports
+  collection review, media serving, crop correction, crop-readiness evaluation,
+  evaluation cost estimates, evaluation-run reads, settings cost dashboard, and
+  exports
 - product, architecture, data, and roadmap docs under `docs/`
 - a consolidated final-tool northstar and staged evaluation specification in
   `docs/project-northstar.md`
@@ -81,22 +92,56 @@ The current local app can:
 - re-detect an existing page with current detector settings
 - remove false-positive crop boxes and remove uploaded pages for clean re-upload
 - filter the stamp list to crops pending crop review
+- multi-select stamp rows, delete selected crops, and evaluate only selected
+  stamps
+- select visible review crops and mark them ready in a batch
+- scan stamp-list badges labeled by topic: `Crop:` for crop status and `Eval:`
+  for value triage
+- edit OpenAI provider, model, image-detail, and API key from a local settings
+  dialog that writes `.env`
+- show live evaluation progress with a progress bar and the current stamp crop
+  image being analyzed
+- show rough pre-run API cost estimates and post-run recorded API cost when
+  token usage is returned by the provider
+- view a settings cost dashboard summarizing recorded evaluation API usage and
+  cost calculations
+- persist and read evaluation runs, stamp observations, catalog candidates,
+  source evidence, stamp valuations, and embedding metadata
+- create a first crop-readiness evaluation run from the browser `Evaluate`
+  action, recording placeholder observations and conservative buckets such as
+  `needs_better_image` and `not_enough_evidence`
+- validate AI vision observations against `stamp-observation-v1`,
+  including strict fields, bounded confidence, allowed cancellation/centering
+  values, and default front-photo unobservable factors
+- optionally call OpenAI vision during evaluation and store validated
+  observation records for crops that do not still need crop review
+- store OpenAI token usage and local USD cost calculations on observation/run
+  metadata when provider responses include usage
+- assign first-pass triage buckets such as `likely_common`,
+  `possibly_interesting`, `needs_expert_check`, and `needs_source_matching`
+  without price estimates
+- include latest evaluation-run fields in collection JSON/CSV exports when
+  records exist
 - export collection data as CSV and JSON
 
 The following are not implemented yet:
 
 - OCR
-- AI vision extraction
 - catalog/reference matching
 - market evidence retrieval
-- valuation logic
-- durable stamp observation/candidate/valuation tables
+- real valuation logic with price ranges
+- source-backed processing for evaluation runs beyond optional observation
+  triage
 - reviewed valuation workflow
 
 The desired evaluation direction is specified in `docs/project-northstar.md`.
 Evaluation should be modeled as a durable run over curated crops, producing
 observations, ranked candidates, source evidence, valuation buckets,
 recommended next actions, and conservative collection summaries.
+
+The detailed build sequence for future heavy implementation sessions lives in
+`docs/final-tool-build-plan.md`. Use it when creating short `/goal` prompts or
+splitting the remaining work into checkpoints.
 
 ## Important Constraints
 
@@ -139,6 +184,23 @@ recommended next actions, and conservative collection summaries.
 - Crop records include `rotation_degrees`. Manual crop creation is done from the
   full-page view; crop resizing and rotation are done from the selected-stamp
   inspector.
+- The first durable evaluation foundation exists in SQLite: `evaluation_runs`,
+  `stamp_observations`, `catalog_candidates`, `source_evidence`,
+  `stamp_valuations`, and `embedding_index`. The browser can create a
+  crop-readiness evaluation run, and collection exports surface the latest run
+  when records exist.
+- The strict `stamp-observation-v1` schema exists and maps validated AI payloads
+  into durable observation records. The prompt draft has been updated to match
+  this schema.
+- The optional OpenAI vision adapter exists and is opt-in via
+  `PHILALENS_VISION_PROVIDER=openai`; default local operation makes no external
+  model calls.
+- Local visible-observation triage exists. It is useful for attention
+  prioritization but is not catalog-backed valuation.
+- The visualizer supports selected-crop batch deletion, selected-crop
+  evaluation runs, selected-crop ready marking, visibly labeled crop/evaluation
+  badges in the stamp list, live evaluation progress, rough API cost estimates,
+  post-run API cost display, and local OpenAI settings/cost dashboard editing.
 - The second Reddit tool link supplied by the user was blocked by Reddit network
   security and no public source/license was found.
 - A source scan found no mature open-source end-to-end stamp album valuation
@@ -147,6 +209,13 @@ recommended next actions, and conservative collection summaries.
   patterns from `adrianspeyer/Canadian-Stamp-Identifier`, image-similarity
   prototypes that require user-provided datasets, and collection-management
   ideas from My Stamps and OpenNumismat.
+- A deeper source investigation found no clean open worldwide stamp catalog API
+  with authoritative catalog IDs, images, variants, and values. The source layer
+  should therefore be layered: Wikidata/Commons first, Smithsonian Open Access
+  second, Europeana third, WNS/WADP only if usable access is confirmed, and
+  eBay Browse only later as weak active-listing evidence. Continue avoiding
+  unlicensed scraping of Colnect, StampWorld, StampData, Freestampcatalogue, or
+  commercial catalog data.
 
 ## Open Product Questions
 
@@ -179,21 +248,23 @@ Resolved for now:
   evidence and uncertainty, start with user-imported/permitted sources, use
   visual similarity as a supporting signal, assign value buckets and next
   actions, and avoid presenting formal appraisals.
+- Development calibration policy: do not use the full 80-page collection as a
+  development experiment. Use 2-4 representative pages until source-backed
+  insights are trustworthy, then run the full collection.
+- Source matching policy: the user does not currently have a catalog CSV, so
+  first candidate matching should use open/permitted APIs rather than assuming
+  user-supplied source data.
 
 ## Next Likely Work
 
 1. Use `docs/project-northstar.md` as the northstar for future work sessions.
-2. Add durable evaluation-run, observation, candidate, evidence, valuation, and
-   optional embedding metadata tables.
-3. Define the strict AI stamp observation schema and tests.
-4. Add the first user-imported source adapter schema.
+2. Use `docs/final-tool-build-plan.md` as the execution plan for heavy work.
+3. Add the source adapter foundation and first Wikidata/Commons adapter slice.
+4. Wire candidate retrieval into selected-crop evaluation only.
 5. Add local similarity search and duplicate grouping for crops/reference data.
-6. Implement the first conservative collection evaluation run with value buckets
-   before marketplace pricing.
-7. Run the local visualizer against a larger real HEIC batch and collect
-   segmentation failure cases with the optional YOLO detector enabled.
-8. Tune confidence, margins, and review flags across more pages, not only the
-   first sample page.
-9. Improve segmentation for rotated, overlapping, partial, and tightly spaced
-   stamps.
-10. Improve crop review ergonomics after real drag-handle use.
+6. Calibrate triage buckets against calibration pages and source-confirmed examples.
+7. Harden AI observation prompts and skip/downgrade rules against more real
+   crops.
+8. Improve segmentation/crop review only when representative calibration pages
+   show concrete failures.
+9. Improve crop review ergonomics after real drag-handle use.

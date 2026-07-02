@@ -1,4 +1,5 @@
 import importlib
+import time
 from pathlib import Path
 
 import cv2
@@ -43,6 +44,55 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     assert redetect_payload["collection"]["stamp_count"] == 1
 
     crop_id = redetect_payload["pages"][0]["stamps"][0]["crop_id"]
+    runs_response = client.get(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluation-runs"
+    )
+    assert runs_response.status_code == 200
+    assert runs_response.json() == []
+
+    estimate_response = client.post(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluation-cost-estimate"
+    )
+    assert estimate_response.status_code == 200
+    assert estimate_response.json()["provider"] == "none"
+    assert estimate_response.json()["estimated_total_cost_usd"] == 0.0
+
+    latest_run_response = client.get(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluation-runs/latest"
+    )
+    assert latest_run_response.status_code == 404
+
+    evaluate_response = client.post(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluate"
+    )
+    assert evaluate_response.status_code == 200
+    evaluate_payload = evaluate_response.json()
+    assert evaluate_payload["latest_evaluation_summary"]["evaluated_stamp_count"] == 1
+    assert (
+        evaluate_payload["pages"][0]["stamps"][0]["valuation"]["value_bucket"]
+        == "needs_better_image"
+    )
+    assert evaluate_payload["pages"][0]["stamps"][0]["observation"]["status"] == "available"
+
+    runs_response = client.get(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluation-runs"
+    )
+    assert runs_response.status_code == 200
+    run_id = runs_response.json()[0]["run_id"]
+    assert runs_response.json()[0]["pipeline_version"] == "crop-readiness-skeleton-v1"
+
+    latest_run_response = client.get(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluation-runs/latest"
+    )
+    assert latest_run_response.status_code == 200
+    assert latest_run_response.json()["run"]["pipeline_version"] == "crop-readiness-skeleton-v1"
+    assert latest_run_response.json()["summary"]["evaluated_stamp_count"] == 1
+    assert latest_run_response.json()["valuations"][0]["value_bucket"] == "needs_better_image"
+
+    run_response = client.get(f"/api/evaluation-runs/{run_id}")
+    assert run_response.status_code == 200
+    assert run_response.json()["run"]["run_id"] == run_id
+
     patch_response = client.patch(
         f"/api/crops/{crop_id}",
         json={
@@ -63,6 +113,52 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     manual_crop_payload = manual_crop_response.json()
     assert manual_crop_payload["collection"]["stamp_count"] == 2
     assert manual_crop_payload["pages"][0]["stamps"][1]["rotation_degrees"] == -8.5
+    manual_crop_id = manual_crop_payload["pages"][0]["stamps"][1]["crop_id"]
+
+    selected_evaluate_response = client.post(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluate",
+        json={"crop_ids": [manual_crop_id]},
+    )
+
+    assert selected_evaluate_response.status_code == 200
+    selected_evaluate_payload = selected_evaluate_response.json()
+    assert selected_evaluate_payload["latest_evaluation_summary"]["evaluated_stamp_count"] == 1
+    assert selected_evaluate_payload["evaluation_runs"][0]["settings"]["crop_scope"] == "selected"
+    assert "cost_estimate" in selected_evaluate_payload["evaluation_runs"][0]["settings"]
+    assert "cost_actual" in selected_evaluate_payload["evaluation_runs"][0]["settings"]
+
+    evaluation_job_response = client.post(
+        f"/api/collections/{payload['collection']['collection_id']}/evaluate/start",
+        json={"crop_ids": [manual_crop_id]},
+    )
+
+    assert evaluation_job_response.status_code == 200
+    job_payload = evaluation_job_response.json()
+    assert job_payload["cost_estimate"]["provider"] == "none"
+    job_id = job_payload["job_id"]
+    for _ in range(20):
+        job_response = client.get(f"/api/evaluation-jobs/{job_id}")
+        assert job_response.status_code == 200
+        job_payload = job_response.json()
+        if job_payload["status"] == "completed":
+            break
+        time.sleep(0.05)
+    assert job_payload["status"] == "completed"
+    assert job_payload["run_id"]
+    assert job_payload["cost_actual"]["api_call_count"] == 0
+
+    mark_ready_response = client.post(
+        "/api/crops/mark-ready",
+        json={"crop_ids": [crop_id]},
+    )
+
+    assert mark_ready_response.status_code == 200
+    mark_ready_payload = mark_ready_response.json()
+    marked_crop = next(
+        stamp for stamp in mark_ready_payload["pages"][0]["stamps"] if stamp["crop_id"] == crop_id
+    )
+    assert marked_crop["review_state"] == "unreviewed"
+    assert marked_crop["warnings"] == []
 
     delete_crop_response = client.delete(f"/api/crops/{crop_id}")
 
@@ -71,6 +167,23 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     assert delete_crop_payload["collection"]["page_count"] == 1
     assert delete_crop_payload["collection"]["stamp_count"] == 1
     assert len(delete_crop_payload["pages"][0]["stamps"]) == 1
+
+    delete_selected_response = client.post(
+        "/api/crops/delete",
+        json={"crop_ids": [manual_crop_id]},
+    )
+
+    assert delete_selected_response.status_code == 200
+    delete_selected_payload = delete_selected_response.json()
+    assert delete_selected_payload["collection"]["stamp_count"] == 0
+    assert delete_selected_payload["pages"][0]["stamps"] == []
+
+    settings_response = client.get("/api/settings")
+
+    assert settings_response.status_code == 200
+    assert "openai_api_key_set" in settings_response.json()
+    assert "cost_dashboard" in settings_response.json()
+    assert settings_response.json()["cost_dashboard"]["evaluation_run_count"] >= 1
 
     delete_page_response = client.delete(f"/api/pages/{page_id}")
 

@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 import shutil
-from dataclasses import asdict
+from dataclasses import asdict, replace
+from os import environ
 from pathlib import Path
+from threading import Lock, Thread
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from .config import settings
-from .exports import build_collection_csv, build_collection_export
+from .config import PROJECT_ROOT, Settings, settings
+from .costing import (
+    build_cost_dashboard,
+    estimate_openai_vision_run_cost,
+    non_openai_cost_estimate,
+)
+from .evaluation import evaluate_collection_readiness
+from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
-from .models import PageImageRecord
+from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord, StampCrop
 from .pipeline import build_empty_page_analysis, summarize_collection
 from .segmentation import detect_stamp_crops, recrop_stamp
 from .storage import PhilalensStore, new_id
+from .vision import VisionObservationError, build_vision_adapter_from_settings
 from .visualizer import VISUALIZER_HTML
 
 
@@ -40,6 +49,17 @@ class CropCreate(BaseModel):
     )
 
 
+class CropSelection(BaseModel):
+    crop_ids: list[str] = Field(default_factory=list)
+
+
+class AppSettingsUpdate(BaseModel):
+    vision_provider: str = Field(default="none")
+    openai_api_key: str | None = Field(default=None)
+    openai_vision_model: str = Field(default="gpt-4.1-mini")
+    openai_vision_detail: str = Field(default="high")
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.2.0",
@@ -47,6 +67,8 @@ app = FastAPI(
 )
 store = PhilalensStore(settings.database_path)
 store.initialize()
+evaluation_jobs: dict[str, dict[str, object]] = {}
+evaluation_jobs_lock = Lock()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -142,6 +164,143 @@ def get_collection(collection_id: str) -> dict[str, object]:
     return export
 
 
+@app.get("/api/collections/{collection_id}/evaluation-runs")
+def list_evaluation_runs(collection_id: str) -> list[dict[str, object]]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    return [asdict(run) for run in store.list_evaluation_runs(collection_id)]
+
+
+@app.post("/api/collections/{collection_id}/evaluate")
+def evaluate_collection(
+    collection_id: str, selection: CropSelection | None = None
+) -> dict[str, object]:
+    try:
+        vision_adapter = build_vision_adapter_from_settings(settings)
+    except VisionObservationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    crop_ids = selection.crop_ids if selection and selection.crop_ids else None
+    run = evaluate_collection_readiness(
+        store,
+        collection_id,
+        vision_adapter=vision_adapter,
+        crop_ids=crop_ids,
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    export = build_collection_export(store, collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after evaluation.")
+    return export
+
+
+@app.post("/api/collections/{collection_id}/evaluate/start")
+def start_evaluation_job(
+    collection_id: str, selection: CropSelection | None = None
+) -> dict[str, object]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    crop_ids = selection.crop_ids if selection and selection.crop_ids else None
+    cost_estimate = _build_evaluation_cost_estimate(collection_id, crop_ids)
+    job_id = new_id("evaljob")
+    _set_evaluation_job(
+        job_id,
+        {
+            "job_id": job_id,
+            "collection_id": collection_id,
+            "status": "queued",
+            "current": 0,
+            "total": 0,
+            "current_crop_id": None,
+            "current_crop_label": None,
+            "current_crop_image_url": None,
+            "message": "Queued evaluation",
+            "error": None,
+            "cost_estimate": cost_estimate,
+            "cost_actual": None,
+        },
+    )
+    thread = Thread(
+        target=_run_evaluation_job,
+        args=(job_id, collection_id, crop_ids),
+        daemon=True,
+    )
+    thread.start()
+    return _get_evaluation_job_or_404(job_id)
+
+
+@app.get("/api/evaluation-jobs/{job_id}")
+def get_evaluation_job(job_id: str) -> dict[str, object]:
+    return _get_evaluation_job_or_404(job_id)
+
+
+@app.post("/api/collections/{collection_id}/evaluation-cost-estimate")
+def estimate_collection_evaluation_cost(
+    collection_id: str, selection: CropSelection | None = None
+) -> dict[str, object]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    crop_ids = selection.crop_ids if selection and selection.crop_ids else None
+    return _build_evaluation_cost_estimate(collection_id, crop_ids)
+
+
+@app.get("/api/settings")
+def get_app_settings() -> dict[str, object]:
+    return {
+        "vision_provider": settings.vision_provider,
+        "openai_api_key_set": bool(settings.openai_api_key),
+        "openai_vision_model": settings.openai_vision_model,
+        "openai_vision_detail": settings.openai_vision_detail,
+        "cost_dashboard": _build_api_cost_dashboard(),
+    }
+
+
+@app.post("/api/settings")
+def update_app_settings(update: AppSettingsUpdate) -> dict[str, object]:
+    global settings
+
+    provider = update.vision_provider.strip().lower() or "none"
+    if provider not in {"none", "openai"}:
+        raise HTTPException(status_code=400, detail="Vision provider must be none or openai.")
+
+    values = {
+        "PHILALENS_VISION_PROVIDER": provider,
+        "PHILALENS_OPENAI_VISION_MODEL": update.openai_vision_model.strip() or "gpt-4.1-mini",
+        "PHILALENS_OPENAI_VISION_DETAIL": update.openai_vision_detail.strip() or "high",
+    }
+    if update.openai_api_key is not None and update.openai_api_key.strip():
+        values["OPENAI_API_KEY"] = update.openai_api_key.strip()
+
+    _write_env_values(PROJECT_ROOT / ".env", values)
+    for key, value in values.items():
+        environ[key] = value
+    settings = Settings()
+    return get_app_settings()
+
+
+@app.get("/api/collections/{collection_id}/evaluation-runs/latest")
+def get_latest_evaluation_run(collection_id: str) -> dict[str, object]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    run = store.get_latest_evaluation_run(collection_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Evaluation run not found.")
+    export = build_evaluation_run_export(store, run.run_id)
+    if export is None:
+        raise HTTPException(status_code=404, detail="Evaluation run not found.")
+    return export
+
+
+@app.get("/api/evaluation-runs/{run_id}")
+def get_evaluation_run(run_id: str) -> dict[str, object]:
+    export = build_evaluation_run_export(store, run_id)
+    if export is None:
+        raise HTTPException(status_code=404, detail="Evaluation run not found.")
+    return export
+
+
 @app.get("/api/collections/{collection_id}/export.json")
 def export_collection_json(collection_id: str) -> JSONResponse:
     export = build_collection_export(store, collection_id)
@@ -150,9 +309,7 @@ def export_collection_json(collection_id: str) -> JSONResponse:
 
     return JSONResponse(
         content=export,
-        headers={
-            "Content-Disposition": f'attachment; filename="philalens-{collection_id}.json"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="philalens-{collection_id}.json"'},
     )
 
 
@@ -214,6 +371,67 @@ def delete_crop(crop_id: str) -> dict[str, object]:
     export = build_collection_export(store, page.collection_id)
     if export is None:
         raise HTTPException(status_code=500, detail="Collection was not found after crop deletion.")
+    return export
+
+
+@app.post("/api/crops/delete")
+def delete_crops(selection: CropSelection) -> dict[str, object]:
+    if not selection.crop_ids:
+        raise HTTPException(status_code=400, detail="Select at least one crop.")
+
+    crops = []
+    for crop_id in selection.crop_ids:
+        crop = store.get_crop(crop_id)
+        if crop is None:
+            raise HTTPException(status_code=404, detail=f"Crop not found: {crop_id}")
+        crops.append(crop)
+
+    pages = [store.get_page(crop.page_id) for crop in crops]
+    if any(page is None for page in pages):
+        raise HTTPException(status_code=404, detail="Page not found for one or more crops.")
+
+    collection_ids = {page.collection_id for page in pages if page is not None}
+    if len(collection_ids) != 1:
+        raise HTTPException(status_code=400, detail="Selected crops must belong to one collection.")
+    collection_id = next(iter(collection_ids))
+
+    for crop in crops:
+        store.delete_crop(crop.crop_id)
+        Path(crop.crop_path).unlink(missing_ok=True)
+
+    export = build_collection_export(store, collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after crop deletion.")
+    return export
+
+
+@app.post("/api/crops/mark-ready")
+def mark_crops_ready(selection: CropSelection) -> dict[str, object]:
+    if not selection.crop_ids:
+        raise HTTPException(status_code=400, detail="Select at least one crop.")
+
+    crops = []
+    for crop_id in selection.crop_ids:
+        crop = store.get_crop(crop_id)
+        if crop is None:
+            raise HTTPException(status_code=404, detail=f"Crop not found: {crop_id}")
+        crops.append(crop)
+
+    pages = [store.get_page(crop.page_id) for crop in crops]
+    if any(page is None for page in pages):
+        raise HTTPException(status_code=404, detail="Page not found for one or more crops.")
+
+    collection_ids = {page.collection_id for page in pages if page is not None}
+    if len(collection_ids) != 1:
+        raise HTTPException(status_code=400, detail="Selected crops must belong to one collection.")
+    collection_id = next(iter(collection_ids))
+
+    for crop in crops:
+        store.update_crop(replace(crop, review_state=REVIEW_UNREVIEWED, warnings=[]))
+
+    export = build_collection_export(store, collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after crop update.")
     return export
 
 
@@ -333,3 +551,170 @@ def _file_response(path: Path, filename: str) -> FileResponse:
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(path=path, filename=filename)
+
+
+def _write_env_values(path: Path, values: dict[str, str]) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    seen: set[str] = set()
+    updated: list[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0] if "=" in line else ""
+        if key in values:
+            updated.append(f"{key}={values[key]}")
+            seen.add(key)
+        else:
+            updated.append(line)
+    for key, value in values.items():
+        if key not in seen:
+            updated.append(f"{key}={value}")
+    path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+
+
+def _build_evaluation_cost_estimate(
+    collection_id: str,
+    crop_ids: list[str] | None = None,
+) -> dict[str, object]:
+    crops = _evaluation_crops(collection_id, crop_ids)
+    billable_crops = [crop for crop in crops if crop.review_state != REVIEW_NEEDS_CROP_REVIEW]
+    skipped_crop_review_count = len(crops) - len(billable_crops)
+    provider = settings.vision_provider.strip().lower() or "none"
+    if provider != "openai":
+        return non_openai_cost_estimate(
+            provider=provider,
+            crop_count=len(crops),
+            billable_api_call_count=0,
+            skipped_crop_review_count=skipped_crop_review_count,
+        )
+
+    return estimate_openai_vision_run_cost(
+        model=settings.openai_vision_model,
+        image_detail=settings.openai_vision_detail,
+        crop_count=len(crops),
+        billable_api_call_count=len(billable_crops),
+        skipped_crop_review_count=skipped_crop_review_count,
+    )
+
+
+def _evaluation_crops(collection_id: str, crop_ids: list[str] | None = None) -> list[StampCrop]:
+    selected_ids = set(crop_ids) if crop_ids else None
+    crops = [
+        crop
+        for page in store.list_pages(collection_id)
+        for crop in store.list_crops_for_page(page.page_id)
+        if selected_ids is None or crop.crop_id in selected_ids
+    ]
+    if selected_ids is not None:
+        found_ids = {crop.crop_id for crop in crops}
+        missing_ids = sorted(selected_ids - found_ids)
+        if missing_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Selected crop not found in collection: {missing_ids[0]}",
+            )
+    return crops
+
+
+def _build_api_cost_dashboard() -> dict[str, object]:
+    runs = [
+        run
+        for collection in store.list_collections()
+        for run in store.list_evaluation_runs(collection.collection_id)
+    ]
+    return build_cost_dashboard(runs)
+
+
+def _evaluation_complete_message(evaluated_count: int, cost_actual: object) -> str:
+    cost_label = _api_cost_label(cost_actual)
+    if cost_label:
+        return f"Evaluation complete: {evaluated_count} stamps checked, API cost {cost_label}"
+    return f"Evaluation complete: {evaluated_count} stamps checked"
+
+
+def _api_cost_label(cost_payload: object) -> str | None:
+    if not isinstance(cost_payload, dict):
+        return None
+    api_call_count = cost_payload.get("api_call_count")
+    if not isinstance(api_call_count, int | float) or int(api_call_count) <= 0:
+        return None
+    cost = cost_payload.get("total_cost_usd")
+    if not isinstance(cost, int | float):
+        cost = cost_payload.get("known_total_cost_usd")
+    if not isinstance(cost, int | float):
+        return None
+    return f"${cost:.4f}" if float(cost) < 0.01 else f"${cost:.2f}"
+
+
+def _run_evaluation_job(job_id: str, collection_id: str, crop_ids: list[str] | None) -> None:
+    _update_evaluation_job(job_id, status="running", message="Starting evaluation")
+    try:
+        vision_adapter = build_vision_adapter_from_settings(settings)
+
+        def report_progress(current: int, total: int, crop) -> None:
+            _update_evaluation_job(
+                job_id,
+                status="running",
+                current=current,
+                total=total,
+                current_crop_id=crop.crop_id,
+                current_crop_label=f"Stamp {crop.crop_index}",
+                current_crop_image_url=f"/media/crops/{crop.crop_id}",
+                message=f"Analyzing Stamp {crop.crop_index}",
+            )
+
+        run = evaluate_collection_readiness(
+            store,
+            collection_id,
+            vision_adapter=vision_adapter,
+            crop_ids=crop_ids,
+            progress_callback=report_progress,
+        )
+        if run is None:
+            _update_evaluation_job(
+                job_id,
+                status="failed",
+                message="Collection not found",
+                error="Collection not found.",
+            )
+            return
+        export = build_collection_export(store, collection_id)
+        evaluated_count = 0
+        if export and export.get("latest_evaluation_summary"):
+            summary = export["latest_evaluation_summary"]
+            if isinstance(summary, dict):
+                evaluated_count = int(summary.get("evaluated_stamp_count") or 0)
+        _update_evaluation_job(
+            job_id,
+            status="completed",
+            current=evaluated_count,
+            total=evaluated_count,
+            message=_evaluation_complete_message(evaluated_count, run.settings.get("cost_actual")),
+            run_id=run.run_id,
+            cost_actual=run.settings.get("cost_actual"),
+        )
+    except Exception as exc:
+        _update_evaluation_job(
+            job_id,
+            status="failed",
+            message="Evaluation failed",
+            error=str(exc),
+        )
+
+
+def _set_evaluation_job(job_id: str, payload: dict[str, object]) -> None:
+    with evaluation_jobs_lock:
+        evaluation_jobs[job_id] = payload
+
+
+def _update_evaluation_job(job_id: str, **updates: object) -> None:
+    with evaluation_jobs_lock:
+        job = dict(evaluation_jobs.get(job_id, {"job_id": job_id}))
+        job.update(updates)
+        evaluation_jobs[job_id] = job
+
+
+def _get_evaluation_job_or_404(job_id: str) -> dict[str, object]:
+    with evaluation_jobs_lock:
+        job = evaluation_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Evaluation job not found.")
+        return dict(job)

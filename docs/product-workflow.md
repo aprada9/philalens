@@ -72,6 +72,42 @@ Capture:
 Observation should run inside a durable evaluation run so results can be
 reproduced, reviewed, and superseded by later pipeline versions.
 
+The current app can create a durable crop-readiness evaluation run. With the
+default local configuration, this skeleton records placeholder observations and
+assigns conservative per-crop buckets such as `needs_better_image` for crops
+still needing review or `not_enough_evidence` when no source evidence exists
+yet.
+
+The strict `stamp-observation-v1` schema preserves visible facts, uncertainty,
+image-quality warnings, and front-photo unobservable factors while rejecting
+catalog identity or valuation fields that belong to later stages. An optional
+OpenAI vision adapter can now write those observation records during evaluation
+for crops that do not still need crop review.
+
+After an observation exists, the current app applies a conservative local triage
+pass. It can mark a stamp as `likely_common`, `needs_source_matching`,
+`possibly_interesting`, or `needs_expert_check` based on visible clues such as
+age hints, special-issue text, overprint/surcharge signals, obvious faults, and
+observation confidence. This is not a price estimate; it is a prioritization
+step for finding stamps worth deeper source matching.
+
+The browser review workflow supports triage-oriented batch actions. Stamp rows
+can be multi-selected, selected crops can be deleted together, and evaluation
+can be run only for the selected stamps. Each row shows the latest triage bucket
+next to the stamp label so the user can scan for relevant results before deeper
+source matching. For crop QA, the user can filter to `needs_crop_review`, select
+all visible review crops, and mark them ready in one action when visual
+inspection confirms the crops are acceptable. Row badges are labeled by topic:
+`Crop:` for crop-review state and `Eval:` for evaluation triage.
+
+Evaluation runs should show progress while they are active. The current browser
+starts an evaluation job, polls job status, and displays the current stamp crop
+image plus a progress bar so long-running AI vision calls are observable.
+Before a run starts, the browser asks the API for a rough OpenAI cost estimate
+for the current selection. After a run completes, returned token usage and local
+USD cost calculations are kept on the durable evaluation run and summarized in
+the Settings cost dashboard.
+
 ## 4. Candidate Identification
 
 The system retrieves candidate matches from allowed catalog/reference sources.

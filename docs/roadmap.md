@@ -56,9 +56,14 @@ handling, and detector tuning.
 - Store evidence and uncertainty.
 - Add prompt and schema tests for repeatability.
 
-Status: specified, not implemented. The next implementation step should define
-durable evaluation runs and stamp observation records before connecting an AI
-vision adapter.
+Status: partially implemented. Durable evaluation-run and stamp observation
+storage exists, and `stamp-observation-v1` defines a strict AI-visible
+observation contract with parser tests and an updated prompt draft. An optional
+OpenAI vision adapter now writes validated observations into evaluation runs
+when explicitly enabled, records returned token usage/cost metadata, and local
+triage rules classify observed stamps into attention buckets without prices. The
+next implementation step is a permitted catalog/source adapter for candidate
+matching.
 
 ## Milestone 5: Catalog Matching
 
@@ -67,7 +72,8 @@ vision adapter.
 - Expose alternative matches for review.
 
 Status: specified, not implemented. Start with user-imported source adapters and
-local text/visual retrieval. Avoid bundling restricted catalog data.
+local text/visual retrieval. Avoid bundling restricted catalog data. Current
+triage buckets are not catalog matches.
 
 ## Milestone 6: Valuation
 
@@ -89,7 +95,14 @@ collection-level ranges.
 - Preserve old runs when the pipeline is re-run.
 - Show run progress, warnings, errors, and source coverage.
 
-Status: specified in `docs/project-northstar.md`, not implemented.
+Status: skeleton started. SQLite tables, dataclass records, storage methods,
+read API endpoints, and CSV/JSON export fields now exist for evaluation runs,
+observations, candidates, source evidence, valuations, and embedding metadata.
+The local visualizer has an `Evaluate` action that creates a completed
+crop-readiness run, records placeholder observations, and assigns conservative
+per-crop buckets such as `needs_better_image` or `not_enough_evidence`. It does
+not yet process crops through AI observation extraction, source matching,
+evidence gathering, real valuation logic, or collection rollup.
 
 ## Milestone 7: Review Experience
 
@@ -103,6 +116,10 @@ page, edit crop boxes in the selected-stamp inspector with drag handles or
 numeric fields, shade non-cropped areas during no-selection coverage review,
 filter the stamp list to crops pending review, remove false-positive crops,
 remove uploaded pages for clean re-upload, manually draw crops for missed
-stamps, rotate crops with an inspector drag handle, keep side lists scrolling
-independently, and export CSV/JSON. Candidate matching and valuation review are
-still placeholders.
+stamps, rotate crops with an inspector drag handle, run full-collection or
+selected-stamp evaluation, multi-select stamps for batch crop deletion, show
+topic-labeled crop/evaluation badges in the stamp list, batch-mark selected
+review crops as ready, show live evaluation progress with the current crop
+thumbnail and API cost information when available, edit local OpenAI settings,
+show a settings cost dashboard, keep side lists scrolling independently, and
+export CSV/JSON. Candidate matching and valuation review are still placeholders.

@@ -286,3 +286,111 @@ time.
 Consequences: Future changes to evaluation, matching, source strategy,
 valuation, or review UX should stay consistent with `docs/project-northstar.md`
 or explicitly update it.
+
+## 2026-06-30: Start Evaluation With Crop-Readiness Skeleton
+
+Status: Accepted
+
+Context: Durable evaluation tables existed, but the browser still had no
+testable evaluation workflow before AI vision, source adapters, and valuation
+logic were connected.
+
+Decision: Add an `Evaluate` action that creates a completed crop-readiness run,
+stores placeholder observations, and assigns conservative per-crop buckets such
+as `needs_better_image` or `not_enough_evidence`.
+
+Rationale: This makes the evaluation lifecycle testable end to end without
+pretending that identification, catalog matching, market evidence, or valuation
+has happened.
+
+Consequences: Future AI observation and source-adapter work should replace or
+extend the skeleton records inside the same durable run model rather than
+creating a separate workflow.
+
+## 2026-06-30: Use Strict Observation Schema Before Vision Adapter
+
+Status: Accepted
+
+Context: The next pipeline stage needs AI-visible stamp observations, but model
+output must remain reviewable, bounded, and separate from catalog identity or
+valuation claims.
+
+Decision: Define `stamp-observation-v1` as a strict JSON contract before adding
+an AI vision adapter. The schema rejects extra fields, bounds confidence,
+constrains cancellation and centering values, defaults important front-photo
+unobservable factors, and maps validated payloads into durable observation
+records.
+
+Rationale: A strict contract makes prompt, parser, storage, and tests align
+before network/model behavior is introduced.
+
+Consequences: Future vision adapters should emit this schema and treat catalog
+candidate IDs, market evidence, and value ranges as later pipeline stages.
+
+## 2026-06-30: Keep AI Vision Opt-In
+
+Status: Accepted
+
+Context: The local MVP stores user album photos on disk and should remain
+usable without sending private images to a model provider. At the same time,
+the next evaluation phase needs a practical way to populate structured
+observations from stamp crop images.
+
+Decision: Add an OpenAI Responses API vision adapter behind explicit local
+configuration: `PHILALENS_VISION_PROVIDER=openai` plus `OPENAI_API_KEY`. The
+default provider remains `none`, so local evaluation creates placeholder
+observations and no external calls. When enabled, only crops that do not need
+crop review are submitted, and responses must validate against
+`stamp-observation-v1` before they are stored.
+
+Rationale: This makes the vision stage testable and useful while preserving the
+local-first privacy posture by default.
+
+Consequences: Future adapters should follow the same opt-in pattern and record
+provider/model settings on each evaluation run. Source matching and valuation
+must remain separate stages; vision observations cannot claim catalog identity
+or price.
+
+## 2026-06-30: Use Non-Price Triage Before Catalog Valuation
+
+Status: Accepted
+
+Context: The user wants to know whether a collection contains anything worth
+attention before full catalog matching and market retrieval exist. OpenAI vision
+can provide visible observations, but stamp prices often depend on catalog
+variant, watermark, perforation, paper, shade, condition, and market evidence.
+
+Decision: Add a local visible-observation triage pass that assigns conservative
+non-price buckets: `likely_common`, `needs_source_matching`,
+`possibly_interesting`, and `needs_expert_check`. Estimated value fields remain
+empty until source-backed candidate matching and market evidence are connected.
+
+Rationale: This gives immediate collection triage without presenting model-only
+guesses as appraisals.
+
+Consequences: Triage buckets should be treated as prioritization signals, not
+prices. Future candidate matching and valuation may supersede these buckets
+with source-backed value ranges and stronger confidence.
+
+## 2026-06-30: Track OpenAI Evaluation Cost On Runs
+
+Status: Accepted
+
+Context: OpenAI vision evaluation can generate real API spend, and the user
+wants to understand both expected and post-run cost before deeper valuation
+features are connected.
+
+Decision: Add a local costing module that gives rough pre-run estimates for the
+configured OpenAI model/detail and stores post-run token usage/cost summaries in
+evaluation-run `settings_json`. The settings dialog shows a cost dashboard built
+from durable runs.
+
+Rationale: Evaluation runs already preserve provider/model settings and are the
+right audit boundary for reproducible analysis. Keeping cost data in run
+settings avoids a schema migration while still making the data exportable and
+visible in the UI.
+
+Consequences: Cost values are informational and should be checked against
+provider billing for final charges. Future non-OpenAI providers or richer
+billing views can add structured tables if run-settings metadata becomes too
+limited.

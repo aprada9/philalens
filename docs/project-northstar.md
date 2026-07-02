@@ -432,6 +432,13 @@ valuation system. Useful pieces are:
 These are conceptual tables or records. Names can change during implementation,
 but the information should remain represented.
 
+Status: the first local SQLite version of this model now exists for evaluation
+runs, stamp observations, catalog candidates, source evidence, stamp valuations,
+and embedding metadata. Current API/export support can read evaluation state,
+and the browser can create a crop-readiness evaluation skeleton. AI observation
+extraction, source adapters, candidate retrieval, market evidence, real
+valuation logic, and collection rollups remain later phases.
+
 ### `evaluation_runs`
 
 - `run_id`
@@ -599,7 +606,9 @@ should see:
 - crops pending review
 - sources enabled
 - expected limitations
+- rough API cost estimate when an external provider is enabled
 - run status and progress
+- recorded post-run API cost when provider usage is returned
 - warnings for unavailable API keys or source data
 
 ### Evaluation Dashboard
@@ -613,6 +622,7 @@ The dashboard should show:
 - stamps needing crop review
 - expert-review recommendations
 - source coverage
+- API usage and cost summary for external provider evaluation runs
 
 ### Stamp Detail Review
 
@@ -649,6 +659,10 @@ Each step should be small enough for a focused development session.
 3. Add API read endpoints for evaluation state.
 4. Add tests for schema migration and export shape.
 
+Status: implemented for the local SQLite backend and current CSV/JSON exports.
+The next sessions should continue with Phase B unless Phase A needs additional
+UI polish.
+
 ### Phase B: Observation Extraction
 
 1. Define a strict stamp observation schema.
@@ -656,6 +670,13 @@ Each step should be small enough for a focused development session.
 3. Add an optional AI vision adapter.
 4. Store observations per crop and run.
 5. Show observations in the visualizer.
+
+Status: partially implemented. `stamp-observation-v1`, parser/conversion
+helpers, prompt shape, schema tests, optional OpenAI vision adapter, run
+integration, basic visualizer display for real observations, and local
+visible-observation triage buckets now exist. The next work in this phase is to
+harden prompts against more real crops, calibrate triage buckets, and tune which
+image-quality states should skip or downgrade vision.
 
 ### Phase C: User-Imported Source Adapter
 
@@ -680,6 +701,13 @@ Each step should be small enough for a focused development session.
 3. Produce placeholder valuation buckets without marketplace calls.
 4. Store run status and errors.
 5. Add evaluation dashboard summary.
+
+Status: partially implemented as a crop-readiness skeleton. The endpoint and
+browser button create a durable run, store placeholder observations, assign
+conservative buckets for crop review or insufficient evidence, and expose a
+small summary. The current browser/API also expose rough OpenAI cost estimates
+and a settings cost dashboard based on recorded run usage. Processing through
+candidate retrieval is still future work.
 
 ### Phase F: Market Evidence
 
@@ -732,4 +760,3 @@ The final tool is useful when:
   outliers?
 - What threshold should require expert review before showing high value ranges?
 - Should front/back image capture be added before or after first valuation?
-

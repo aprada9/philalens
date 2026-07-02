@@ -23,9 +23,10 @@ album photos
 ### Local Storage
 
 The current local MVP uses SQLite plus filesystem storage under `data/local/` by
-default. The database tracks collections, pages, and detected crops. The
-filesystem stores original uploads, normalized JPEG page derivatives, and crop
-images.
+default. The database tracks collections, pages, detected crops, and durable
+evaluation records for runs, observations, candidates, source evidence,
+valuations, and embedding metadata. The filesystem stores original uploads,
+normalized JPEG page derivatives, and crop images.
 
 Relevant modules:
 
@@ -92,13 +93,45 @@ front-side album photo usually cannot prove watermark, paper, gum, hidden thins,
 repairs, regumming, or expertized authenticity. These unknowns should be stored
 as uncertainty, not silently ignored.
 
+The strict `stamp-observation-v1` schema now lives in
+`backend/src/philalens/observation_schema.py`. It rejects unexpected fields,
+normalizes visible text/list fields, enforces allowed cancellation and centering
+values, bounds confidence to 0.0-1.0, defaults front-photo unobservable factors,
+and converts validated payloads into durable `StampObservationRecord` rows. The
+prompt draft in `backend/src/philalens/prompts/stamp_analysis.md` mirrors the
+same JSON shape. `backend/src/philalens/vision.py` provides an optional OpenAI
+Responses API adapter, disabled by default, that sends eligible crop images only
+when `PHILALENS_VISION_PROVIDER=openai` and `OPENAI_API_KEY` are configured. The
+adapter attaches returned token usage and local cost calculations to observation
+metadata when the provider response includes usage.
+
 ### Evaluation Runs
 
-The next architecture phase should add durable evaluation runs. A run records
-the pipeline version, model/source settings, status, errors, and the observation,
-candidate, evidence, and valuation records produced for a collection. Runs make
-the process reproducible enough that improved pipelines can be re-run without
-overwriting older evidence.
+Durable evaluation-run storage now exists. A run records the pipeline version,
+model/source settings, status, warnings, errors, and the observation, candidate,
+source evidence, valuation, and embedding metadata records produced for a
+collection. Runs make the process reproducible enough that improved pipelines
+can be re-run without overwriting older evidence.
+
+The current implementation provides the schema, storage methods, read endpoints,
+CSV/JSON export fields, and a first `Evaluate` action in the local visualizer.
+That action creates a completed crop-readiness run. By default it records
+placeholder observations and assigns conservative per-crop value buckets such as
+`needs_better_image` for crops still needing review or `not_enough_evidence`
+when no source evidence exists yet. When the optional OpenAI vision adapter is
+configured, the same run writes validated AI-visible observations for crops that
+do not need crop review, then applies local visible-observation triage rules in
+`backend/src/philalens/triage.py`. Those rules can mark crops as
+`likely_common`, `possibly_interesting`, `needs_expert_check`, or
+`needs_source_matching` without assigning prices. Source adapters, candidate
+retrieval, and real valuation logic remain future phases.
+
+Evaluation run settings also carry cost metadata. `backend/src/philalens/costing.py`
+creates rough pre-run OpenAI estimates from the configured model/detail and the
+number of billable crops, then summarizes actual token usage and calculated USD
+cost after the run. This avoids a schema migration while preserving cost data in
+the durable run export. The cost calculation is informational and should be
+checked against provider billing for final charges.
 
 ### Candidate Matching
 
@@ -126,9 +159,12 @@ Lets a human confirm, reject, or edit candidate matches before exporting the inv
 
 The current local browser visualizer lets the user upload batches, inspect page
 images with crop overlays, move stamp-by-stamp through detected crops, re-detect
-the current page, remove false-positive crop boxes, remove uploaded pages for
-fresh re-upload, manually draw crop boxes for missed stamps, and export
-CSV/JSON. Full-page overlays are for location and selection only; the selected
+the current page, create full-collection or selected-stamp evaluation runs,
+multi-select stamp rows for batch crop deletion or batch crop-ready acceptance,
+remove uploaded pages for fresh re-upload, manually draw crop boxes for missed
+stamps, and export CSV/JSON. Stamp rows show separate `Crop:` and `Eval:` badges
+so crop review status and value triage are visually distinct. Full-page overlays
+are for location and selection only; the selected
 stamp is highlighted strongly in the full page, and crop-box resizing happens in
 the selected-stamp inspector with corner drag handles or numeric fields. The
 inspector also has a drag rotation handle for rotated stamps; rotation is stored
@@ -136,18 +172,26 @@ as `rotation_degrees` and used when writing the crop image. When no stamp is
 selected, the full-page view shades areas outside detected crop boxes so missed
 stamps are easier to spot. The stamp list can be filtered to `needs_crop_review`
 crops, and the page/stamp lists scroll independently of the main page image.
-Candidate descriptions, matching, and valuation are placeholders until later
-pipeline stages are connected.
+Evaluation can also run as an in-memory job exposed through
+`/api/collections/{collection_id}/evaluate/start` and
+`/api/evaluation-jobs/{job_id}`, letting the browser show a progress bar and
+current crop image during AI vision calls. The API also exposes
+`/api/collections/{collection_id}/evaluation-cost-estimate` for rough pre-run
+cost checks. A local settings dialog reads and writes OpenAI vision settings to
+`.env` without exposing the saved key in API responses and includes a cost
+dashboard built from durable evaluation runs. Candidate matching and price
+valuation are placeholders until later pipeline stages are connected.
 
 Relevant modules:
 
 - `backend/src/philalens/api.py`
+- `backend/src/philalens/costing.py`
 - `backend/src/philalens/visualizer.py`
 - `backend/src/philalens/exports.py`
 
 ## Data Model
 
-The first backend schema focuses on evidence capture:
+The initial in-memory backend schema focuses on evidence capture:
 
 - `StampObservation`: what the system sees in the image
 - `CatalogCandidate`: possible catalog/reference match
@@ -155,13 +199,11 @@ The first backend schema focuses on evidence capture:
 - `PageAnalysis`: all stamps detected on a page
 - `CollectionSummary`: aggregate counts and value range
 
-Future schema work should add persistent records for page images, crop regions,
-source evidence, review state, and recommended next action.
-
-Persistent records for page images, crop regions, crop rotation, and crop review
-state now exist. Future schema work should add durable observation records,
-source evidence records, candidate records, valuation records, and recommended
-next action fields.
+Persistent records now exist for page images, crop regions, crop rotation, crop
+review state, evaluation runs, stamp observations, catalog candidates, source
+evidence, stamp valuations, and embedding metadata. A strict AI observation
+schema also exists. Future schema work should focus on source-import records,
+review decisions, collection-level rollups, and richer reporting.
 
 The intended evaluation schema and staged implementation plan are specified in
 `docs/project-northstar.md`.

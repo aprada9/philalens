@@ -14,14 +14,50 @@ The local MVP stores runtime project data under `data/local/` by default. This
 includes:
 
 - `philalens.sqlite` for collection, page, and crop metadata
+- durable evaluation-run records, observations, candidates, source evidence,
+  valuations, and embedding metadata
 - original uploaded album page images
 - normalized JPEG page images for browser display and segmentation
 - crop images for detected stamps
 
-These local artifacts are ignored by Git. They should not be treated as catalog
-or market data and should not be committed without explicit user intent.
+These local artifacts are ignored by Git. They should not be treated as bundled
+catalog or market data and should not be committed without explicit user intent.
+Source evidence records preserve metadata about where evidence came from, but
+the first automated source adapters are still future work.
+
+AI vision is also opt-in. By default, the local MVP does not send user images to
+external model providers. Setting `PHILALENS_VISION_PROVIDER=openai` and
+`OPENAI_API_KEY` enables the OpenAI vision adapter, which sends stamp crop
+images to the configured model and stores only validated
+`stamp-observation-v1` results in the local evaluation tables. The local browser
+settings dialog can update these OpenAI settings in `.env`; API reads only
+return whether a key is present, not the key value.
+
+OpenAI evaluation cost tracking is local metadata. Pre-run cost estimates are
+rough token heuristics based on configured model/detail and the number of crops
+that would be sent to the provider. Post-run cost summaries use token usage
+returned by OpenAI responses and a local USD-per-million-token pricing table.
+These values help the user understand evaluation cost, but provider billing
+remains the final source of truth and pricing should be rechecked when model
+prices change.
 
 ## Candidate Source Types
+
+The current preferred source order is:
+
+1. Wikidata and Wikimedia Commons for open candidate discovery and reusable
+   image metadata, with Commons file licenses handled per image.
+2. Smithsonian Open Access for CC0 U.S. and notable philatelic metadata/images.
+3. Europeana for broader cultural heritage records and images with per-record
+   rights handling.
+4. WNS/WADP only if usable access is confirmed, mainly for modern official
+   issues since 2002.
+5. Marketplace APIs only after identity is plausible, and active listings must
+   be stored as weak evidence.
+
+Do not assume the user has a catalog CSV. Keep a CSV/import adapter as a useful
+fallback and future licensed-data path, but the first source-backed matching
+work should use open/permitted APIs.
 
 ### User-provided Data
 
@@ -47,6 +83,10 @@ Useful valuation evidence includes realized sale prices, auction results, and re
 eBay's Browse API can provide keyword and image-based search over listings, but
 active listings are not the same as realized prices. Treat active marketplace
 listings as weaker evidence than completed sales or auction realizations.
+
+The eBay Browse API should be introduced after candidate matching, not before.
+It can help gather weak active-listing evidence for plausible candidates or
+outliers, but it should not drive identity or valuation by itself.
 
 ## Matching Strategy
 

@@ -40,15 +40,25 @@ material from possible outliers, explains the evidence, and tells the user when
 better images or expert review are needed.
 
 The first implementation is local-first: it stores uploaded page images,
-normalized derivatives, crop images, and SQLite project state on the user's
-machine. The browser UI should support batch review and correction before later
-AI description, matching, and valuation stages are trusted.
+normalized derivatives, crop images, SQLite project state, and durable
+evaluation-result records on the user's machine. The browser UI should support
+batch review and correction before later AI description, matching, and valuation
+stages are trusted.
 
 After crop curation, the next major product phase is an explicit collection
-evaluation run. Evaluation should extract visible observations, retrieve ranked
-candidates from allowed sources, gather source and market evidence where
-configured, assign value buckets, and produce evidence-backed value ranges with
-recommended next actions.
+evaluation run. The storage and read/export foundation for evaluation runs now
+exists, and the browser can create a first crop-readiness run that records
+placeholder observations and conservative per-crop buckets without prices. The
+strict `stamp-observation-v1` schema now defines the AI-visible observation
+contract, and an optional OpenAI adapter can write validated observations when
+explicitly enabled. The run now performs first-pass visible-observation triage
+to surface `possibly_interesting` or `needs_expert_check` crops without prices.
+When OpenAI vision is used, Philalens records returned token usage and local USD
+cost calculations on the run, exposes a rough pre-run estimate for selected or
+full-collection evaluations, and shows a cost dashboard in Settings. The next
+product work is to retrieve ranked candidates from allowed sources, gather
+source and market evidence where configured, assign evidence-backed value
+buckets, and produce value ranges with recommended next actions.
 
 ## Non-goals
 

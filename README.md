@@ -80,6 +80,20 @@ http://127.0.0.1:8000/docs
 
 By default, local runtime data is stored under `data/local/`, including the
 SQLite database, original uploads, normalized JPEG page images, and crop images.
+The SQLite schema also includes the durable evaluation foundation: versioned
+evaluation runs, stamp observations, catalog candidates, source evidence,
+valuations, and embedding metadata. The local visualizer can create an
+evaluation run that assigns conservative buckets such as `needs_better_image`,
+`likely_common`, `possibly_interesting`, or `needs_expert_check` without prices.
+AI source matching and real valuation logic are not connected by default. An
+optional OpenAI vision adapter can be enabled with
+`PHILALENS_VISION_PROVIDER=openai`; it writes validated
+`stamp-observation-v1` records for crops that do not need crop review, and the
+evaluation run uses those visible observations for first-pass value triage. The
+OpenAI path records returned token usage and a local USD cost calculation on the
+evaluation run, and the API can provide a rough pre-run cost estimate for the
+current collection or selected crops. Catalog matching and price valuation still
+remain later phases.
 
 ## Optional YOLO Stamp Detector
 
@@ -108,15 +122,23 @@ a shaded coverage view for spotting stamps outside detected crop boxes, while a
 selected stamp opens inspector-based crop resizing with corner drag handles and
 numeric fields. It also includes a quick `Review only` filter plus controls to
 remove false-positive crop boxes or uploaded pages that should be re-uploaded.
+Stamp rows can be multi-selected to remove several crops or evaluate only that
+subset. The review filter plus `Select visible` and `Mark ready` controls let
+the user accept many `needs_crop_review` crops at once. Each row separates crop
+status (`Crop: ready` or `Crop: needs review`) from evaluation triage (`Eval:
+likely common`, `Eval: needs expert check`, etc.) so attention-worthy crops are
+easier to find. Evaluation runs show a live progress bar with the current stamp
+crop image being analyzed plus estimated or recorded API cost when available.
 Missed stamps can be added by drawing a manual crop on the full page, and
 rotated stamps can be corrected with an inspector drag handle; crop rotation is
-saved in local storage and exports.
+saved in local storage and exports. The browser also includes a local settings
+dialog for OpenAI provider, model, image-detail, API-key configuration, and a
+cost dashboard summarizing recorded evaluation API usage.
 
 ## Early Development Priorities
 
 - Improve robust page-to-stamp segmentation.
-- Expand the normalized stamp inventory schema.
 - Collect allowed catalog and market data sources.
-- Add AI vision extraction with evidence capture.
+- Show validated AI observations in the review flow.
 - Implement candidate matching and confidence scoring.
 - Add manual review before treating estimates as useful.

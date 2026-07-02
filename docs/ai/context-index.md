@@ -14,6 +14,10 @@ This index tells future agents where to find durable project memory.
 - `README.md`: high-level project summary and setup.
 - `docs/project-northstar.md`: consolidated final-tool northstar and staged
   product/technical specification.
+- `docs/final-tool-build-plan.md`: execution plan for heavy implementation
+  sessions, including calibration-set guardrails, source adapter order,
+  candidate matching, similarity search, dashboard, market evidence, and
+  valuation.
 - `docs/product-brief.md`: product problem, user, inputs, outputs, and non-goals.
 - `docs/product-workflow.md`: proposed end-to-end product workflow and review states.
 - `docs/roadmap.md`: staged plan.
@@ -28,15 +32,34 @@ This index tells future agents where to find durable project memory.
 - `backend/pyproject.toml`: backend dependencies and tooling.
 - `backend/src/philalens/models.py`: current data contracts.
 - `backend/src/philalens/storage.py`: local SQLite persistence for collections,
-  pages, and crops.
+  pages, crops, evaluation runs, observations, candidates, evidence,
+  valuations, and embedding metadata.
 - `backend/src/philalens/imaging.py`: image format support and normalization,
   including HEIC/HEIF registration.
 - `backend/src/philalens/segmentation.py`: current OpenCV crop detection
   prototype plus optional YOLO detector path.
-- `backend/src/philalens/exports.py`: CSV/JSON export shaping.
+- `backend/src/philalens/evaluation.py`: current crop-readiness evaluation
+  skeleton that creates durable runs and conservative placeholder buckets.
+- `backend/src/philalens/observation_schema.py`: strict
+  `stamp-observation-v1` schema, parser, JSON schema helper, and conversion to
+  durable observation records.
+- `backend/src/philalens/vision.py`: optional AI vision adapters, currently an
+  opt-in OpenAI Responses API adapter for `stamp-observation-v1` records.
+- `backend/src/philalens/costing.py`: OpenAI evaluation cost estimates,
+  returned-token usage parsing, per-run cost summaries, and settings dashboard
+  rollups.
+- `backend/src/philalens/triage.py`: local visible-observation value-triage
+  rules for attention buckets before catalog matching or pricing.
+- `backend/src/philalens/exports.py`: CSV/JSON export shaping, including
+  latest evaluation-run fields when records exist.
+- `backend/src/philalens/prompts/stamp_analysis.md`: prompt draft aligned to
+  `stamp-observation-v1`.
 - `backend/src/philalens/visualizer.py`: local browser UI.
 - `backend/src/philalens/pipeline.py`: compatibility pipeline placeholder.
 - `backend/src/philalens/api.py`: FastAPI entrypoint.
+  Includes settings read/write endpoints, selected-crop evaluation, and
+  selected-crop deletion. Evaluation jobs expose pollable progress and cost
+  metadata for the browser progress bar.
 - `scripts/download_stamp_detector.py`: downloads the optional Apache-2.0 YOLO
   model into ignored local storage.
 

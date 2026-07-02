@@ -1,6 +1,6 @@
 # Session Handoff
 
-Last updated: 2026-06-30
+Last updated: 2026-07-02
 
 ## Current State
 
@@ -18,19 +18,50 @@ Philalens has moved from placeholder foundation to a first local MVP foundation:
 - Stored crop images, bounding boxes, confidence, warnings, and review state.
 - Crop boxes flagged as `needs_crop_review` when confidence or geometry is
   suspicious.
+- Durable evaluation foundation in SQLite: evaluation runs, stamp observations,
+  catalog candidates, source evidence, stamp valuations, and embedding metadata.
+- Browser `Evaluate` action and API endpoint for creating a completed
+  crop-readiness evaluation run with placeholder observations and conservative
+  buckets.
+- Strict `stamp-observation-v1` schema, parser, JSON schema helper, prompt
+  shape, and conversion helper for AI vision observations.
+- Optional OpenAI vision adapter wired into evaluation runs. It is disabled by
+  default and only sends crop images externally when
+  `PHILALENS_VISION_PROVIDER=openai` and `OPENAI_API_KEY` are configured.
+- Local value triage over AI-visible observations. It creates non-price buckets
+  such as `likely_common`, `possibly_interesting`, `needs_expert_check`, and
+  `needs_source_matching`.
+- OpenAI evaluation cost tracking. The API can return a rough pre-run estimate
+  for the current collection or selected crops, and completed runs summarize
+  returned token usage plus local USD cost calculations when usage is present.
+- Blank optional values copied from `.env.example` are treated as unset, so
+  `PHILALENS_STAMP_YOLO_MODEL_PATH=` falls back to the default local model path
+  instead of being interpreted as the current directory.
+- Collection exports include latest evaluation-run fields and summary data when
+  records exist.
 - Browser visualizer at `/` for upload, page review, crop inspection, selected
   stamp highlighting on the full page, inspector-based crop-box resizing with
   drag handles or numeric fields, no-selection coverage shading for spotting
   missed crops, manual crop drawing for missed stamps, inspector-based crop
-  rotation with a drag handle, a pending-review stamp filter, crop deletion,
-  page deletion, page re-detection, independently scrolling side lists, and
-  CSV/JSON exports.
+  rotation with a drag handle, a pending-review stamp filter, selected-crop
+  deletion, selected-crop evaluation, selected-crop ready marking, topic-labeled
+  crop/evaluation badges in the stamp list, crop deletion, page deletion, page
+  re-detection, live evaluation progress with current crop thumbnail and API
+  cost information when available, local OpenAI settings editing and a settings
+  cost dashboard,
+  independently scrolling side lists, and CSV/JSON exports.
 - API endpoints for collection listing/detail, media serving, crop updates,
-  manual crop creation, crop deletion, page deletion, and exports.
+  manual crop creation, crop deletion, selected-crop deletion, selected-crop
+  ready marking, page deletion, crop-readiness evaluation for full collections
+  or selected crops, pollable evaluation jobs, evaluation cost estimates,
+  evaluation-run reads, local settings with cost dashboard, and exports.
 - Initial pipeline placeholder remains for backward-compatible smoke checks.
 - Product, architecture, data strategy, and roadmap docs.
 - `docs/project-northstar.md`, a consolidated final-tool northstar and staged
   specification for collection evaluation.
+- `docs/final-tool-build-plan.md`, a detailed execution plan for heavy
+  implementation sessions that keeps `/goal` prompts short while preserving the
+  full plan in the repo.
 - Agent operating guide and context infrastructure.
 - Context guard script and GitHub Actions workflow.
 - Product workflow and research notes for segmentation, valuation, and data
@@ -84,20 +115,29 @@ The user clarified:
 - after crop detection and curation, the next phase should be automatic
   collection evaluation, guided by a durable northstar that future sessions can
   split into small steps
+- the full 80-page collection should not be used as a development experiment;
+  use 2-4 representative calibration pages until source-backed insights are
+  trustworthy
+- cropping is now considered mostly good, with only targeted crop/review
+  adjustments needed unless calibration examples show concrete failures
+- the user does not have a catalog CSV, so the first source-backed matching path
+  should rely on open/permitted APIs and source adapters rather than assuming a
+  user-provided catalog export
 
 ## What Is Not Built Yet
 
-- OCR or AI vision extraction.
+- OCR beyond the optional structured OpenAI vision observation adapter.
 - Catalog matching.
 - Market evidence retrieval.
 - Value estimation.
-- Durable observation, candidate, source evidence, and valuation tables.
+- Source-backed processing for evaluation runs beyond optional observation
+  triage.
 - Candidate/valuation review workflow beyond crop review.
 - Empirical tuning of YOLO confidence/margins against more of the user's real
   HEIC pages.
-- Evaluation runs, AI observation extraction, source adapters, local similarity
-  search, duplicate grouping, valuation buckets, marketplace evidence adapters,
-  and collection evaluation dashboards.
+- Source adapters, local similarity search, duplicate grouping, real valuation
+  buckets beyond the crop-readiness skeleton, marketplace evidence adapters, and
+  collection evaluation dashboards beyond the settings cost summary.
 
 ## Research Conclusions
 
@@ -113,6 +153,11 @@ The user clarified:
   system. Reusable ideas come from `code2k13/philately-tool` for local vector
   search, structured catalogue projects such as Canadian Stamp Identifier, and
   adjacent inventory tools such as My Stamps and OpenNumismat.
+- A deeper source investigation found no clean open worldwide stamp catalog API
+  with authoritative catalog IDs, images, variants, and values. The recommended
+  source order is Wikidata/Commons first, Smithsonian Open Access second,
+  Europeana third, WNS/WADP only if usable access is confirmed, and eBay Browse
+  only later as weak active-listing evidence.
 - Evaluation should run as a durable, versioned process over curated crops and
   should produce observations, candidates, source evidence, valuation buckets,
   recommended next actions, and conservative collection summaries.
@@ -122,7 +167,8 @@ The user clarified:
 1. Read `AGENTS.md`.
 2. Read `docs/ai/context.md`.
 3. Read `docs/product-brief.md`, `docs/product-workflow.md`,
-   `docs/project-northstar.md`, `docs/architecture.md`,
+   `docs/project-northstar.md`, `docs/final-tool-build-plan.md`,
+   `docs/architecture.md`,
    `docs/data-strategy.md`, and `docs/research/`.
 4. Check `git status --short --branch`.
 5. Run the backend tests if dependencies are installed:
@@ -133,17 +179,16 @@ The user clarified:
 
 ## Next Good Tasks
 
-- Implement the first durable evaluation schema: evaluation runs, observations,
-  candidates, evidence, valuations, and optional embedding metadata.
-- Define and test the strict AI stamp observation schema.
-- Add a user-imported source adapter shape for CSV/spreadsheet reference data.
+- Follow `docs/final-tool-build-plan.md` for the next heavy implementation
+  session.
+- Add the source adapter foundation and first Wikidata/Commons adapter slice.
+- Wire candidate retrieval into selected-crop evaluation only.
 - Add local similarity search and duplicate clustering as supporting retrieval.
-- Add a first conservative "Evaluate collection" run that assigns value buckets
-  and next actions before marketplace pricing.
-- Run a real HEIC batch through the local visualizer and inspect segmentation
-  failure cases using the optional YOLO detector.
-- Compare results across more pages and tune detector confidence, crop margins,
-  and review flags beyond the first sample page.
-- Improve segmentation for rotated, overlapping, partial, and tightly spaced
-  stamps.
+- Calibrate the triage buckets against real pages and known examples.
+- Harden the AI observation prompt and skip/downgrade policy against more real
+  crops.
+- Use 2-4 representative calibration pages rather than the full 80-page
+  collection until source-backed insight quality is proven.
+- Improve segmentation/crop review only when calibration examples show specific
+  remaining failures.
 - Improve drag-handle crop editing based on hands-on use.
