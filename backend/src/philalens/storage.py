@@ -12,11 +12,12 @@ from typing import Any
 from uuid import uuid4
 
 from .models import (
+    EVALUATION_STATUS_INTERRUPTED,
     EVALUATION_STATUS_PENDING,
+    EVALUATION_STATUS_RUNNING,
     REVIEW_NEEDS_CROP_REVIEW,
     CatalogCandidateRecord,
     CollectionRecord,
-    EmbeddingRecord,
     EvaluationRunRecord,
     PageImageRecord,
     SourceEvidenceRecord,
@@ -50,13 +51,6 @@ def _load_dict(value: str | None) -> dict[str, Any]:
         return {}
     loaded = json.loads(value)
     return loaded if isinstance(loaded, dict) else {}
-
-
-def _load_float_list(value: str | None) -> list[float]:
-    if not value:
-        return []
-    loaded = json.loads(value)
-    return [float(item) for item in loaded] if isinstance(loaded, list) else []
 
 
 class PhilalensStore:
@@ -203,16 +197,6 @@ class PhilalensStore:
                     created_at TEXT NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS embedding_index (
-                    embedding_id TEXT PRIMARY KEY,
-                    owner_type TEXT NOT NULL,
-                    owner_id TEXT NOT NULL,
-                    model_name TEXT NOT NULL,
-                    embedding_dimension INTEGER NOT NULL,
-                    embedding_vector_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-
                 CREATE INDEX IF NOT EXISTS idx_pages_collection_order
                     ON pages(collection_id, page_order);
 
@@ -233,9 +217,6 @@ class PhilalensStore:
 
                 CREATE INDEX IF NOT EXISTS idx_valuations_run_crop
                     ON stamp_valuations(run_id, crop_id);
-
-                CREATE INDEX IF NOT EXISTS idx_embedding_owner
-                    ON embedding_index(owner_type, owner_id, model_name);
                 """
             )
             self._ensure_crop_rotation_column(connection)
@@ -462,6 +443,13 @@ class PhilalensStore:
             cursor = connection.execute("DELETE FROM pages WHERE page_id = ?", (page_id,))
         return cursor.rowcount > 0
 
+    def delete_collection(self, collection_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM collections WHERE collection_id = ?", (collection_id,)
+            )
+        return cursor.rowcount > 0
+
     def next_crop_index(self, page_id: str) -> int:
         with self._connect() as connection:
             row = connection.execute(
@@ -619,6 +607,23 @@ class PhilalensStore:
                 (collection_id,),
             ).fetchall()
         return [self._evaluation_run_from_row(row) for row in rows]
+
+    def mark_interrupted_evaluation_runs(self) -> int:
+        """Mark runs left in a non-terminal status (e.g. after a crash) as interrupted."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE evaluation_runs
+                SET status = ?
+                WHERE status IN (?, ?)
+                """,
+                (
+                    EVALUATION_STATUS_INTERRUPTED,
+                    EVALUATION_STATUS_PENDING,
+                    EVALUATION_STATUS_RUNNING,
+                ),
+            )
+        return cursor.rowcount
 
     def get_evaluation_run(self, run_id: str) -> EvaluationRunRecord | None:
         with self._connect() as connection:
@@ -936,51 +941,6 @@ class PhilalensStore:
             ).fetchone()
         return self._stamp_valuation_from_row(row) if row else None
 
-    def add_embedding(self, embedding: EmbeddingRecord) -> EmbeddingRecord:
-        embedding = replace(embedding, created_at=embedding.created_at or utc_now())
-        with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO embedding_index (
-                    embedding_id,
-                    owner_type,
-                    owner_id,
-                    model_name,
-                    embedding_dimension,
-                    embedding_vector_json,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    embedding.embedding_id,
-                    embedding.owner_type,
-                    embedding.owner_id,
-                    embedding.model_name,
-                    embedding.embedding_dimension,
-                    _dump_json(embedding.embedding_vector),
-                    embedding.created_at,
-                ),
-            )
-        return embedding
-
-    def list_embeddings_for_owner(
-        self, owner_type: str, owner_id: str, model_name: str | None = None
-    ) -> list[EmbeddingRecord]:
-        query = """
-            SELECT * FROM embedding_index
-            WHERE owner_type = ? AND owner_id = ?
-        """
-        params: tuple[str, ...] = (owner_type, owner_id)
-        if model_name is not None:
-            query += " AND model_name = ?"
-            params = (owner_type, owner_id, model_name)
-        query += " ORDER BY created_at DESC, embedding_id DESC"
-
-        with self._connect() as connection:
-            rows = connection.execute(query, params).fetchall()
-        return [self._embedding_from_row(row) for row in rows]
-
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)
         connection.row_factory = sqlite3.Row
@@ -1154,17 +1114,5 @@ class PhilalensStore:
             uncertainty_warnings=_load_list(row["uncertainty_warnings_json"]),
             recommended_next_action=row["recommended_next_action"],
             evidence_ids=_load_list(row["evidence_ids_json"]),
-            created_at=row["created_at"],
-        )
-
-    @staticmethod
-    def _embedding_from_row(row: sqlite3.Row) -> EmbeddingRecord:
-        return EmbeddingRecord(
-            embedding_id=row["embedding_id"],
-            owner_type=row["owner_type"],
-            owner_id=row["owner_id"],
-            model_name=row["model_name"],
-            embedding_dimension=int(row["embedding_dimension"]),
-            embedding_vector=_load_float_list(row["embedding_vector_json"]),
             created_at=row["created_at"],
         )

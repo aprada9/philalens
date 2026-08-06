@@ -9,7 +9,6 @@ from philalens.exports import (
 from philalens.models import (
     REVIEW_NEEDS_CROP_REVIEW,
     CatalogCandidateRecord,
-    EmbeddingRecord,
     PageImageRecord,
     SourceEvidenceRecord,
     StampCrop,
@@ -147,24 +146,12 @@ def test_storage_and_exports_round_trip_collection(tmp_path: Path) -> None:
             evidence_ids=[evidence.evidence_id],
         )
     )
-    embedding = store.add_embedding(
-        EmbeddingRecord(
-            embedding_id="emb_1",
-            owner_type="crop",
-            owner_id="crop_1",
-            model_name="test-embedding",
-            embedding_dimension=3,
-            embedding_vector=[0.1, 0.2, 0.3],
-        )
-    )
-
     assert store.list_evaluation_runs(collection.collection_id)[0].run_id == run.run_id
     assert store.get_latest_evaluation_run(collection.collection_id) == run
     assert store.get_stamp_observation_for_crop(run.run_id, "crop_1") == observation
     assert store.list_catalog_candidates_for_crop(run.run_id, "crop_1") == [candidate]
     assert store.list_source_evidence_for_crop(run.run_id, "crop_1") == [evidence]
     assert store.get_stamp_valuation_for_crop(run.run_id, "crop_1") == valuation
-    assert store.list_embeddings_for_owner("crop", "crop_1") == [embedding]
 
     export = build_collection_export(store, collection.collection_id)
     assert export is not None

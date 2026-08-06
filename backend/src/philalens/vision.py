@@ -10,8 +10,8 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from .costing import openai_cost_for_usage, token_usage_from_response
 from .config import Settings
+from .costing import openai_cost_for_usage, token_usage_from_response
 from .models import StampCrop, StampObservationRecord
 from .observation_schema import (
     observation_to_record,
@@ -19,7 +19,6 @@ from .observation_schema import (
     stamp_observation_json_schema,
     validation_error_messages,
 )
-
 
 PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "stamp_analysis.md"
 

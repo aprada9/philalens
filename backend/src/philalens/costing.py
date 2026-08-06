@@ -7,7 +7,6 @@ from typing import Any
 
 from .models import EvaluationRunRecord, StampObservationRecord
 
-
 USD_PER_MILLION = 1_000_000
 
 

@@ -8,6 +8,7 @@ evaluation workflow without pretending identification has happened.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -30,8 +31,11 @@ from .storage import PhilalensStore, new_id, utc_now
 from .triage import triage_observation
 from .vision import VisionObservationAdapter, VisionObservationError
 
-
 CROP_READINESS_PIPELINE_VERSION = "crop-readiness-skeleton-v1"
+
+# Backoff before each retry of a failed vision call. Tests may monkeypatch
+# this to () to avoid sleeping.
+VISION_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 3.0)
 
 
 def evaluate_collection_readiness(
@@ -40,43 +44,71 @@ def evaluate_collection_readiness(
     vision_adapter: VisionObservationAdapter | None = None,
     crop_ids: list[str] | None = None,
     progress_callback: Callable[[int, int, StampCrop], None] | None = None,
+    resume_run_id: str | None = None,
 ) -> EvaluationRunRecord | None:
     collection = store.get_collection(collection_id)
     if collection is None:
         return None
 
     vision_mode = vision_adapter.adapter_name if vision_adapter else "not_connected"
-    crop_id_filter = set(crop_ids) if crop_ids is not None else None
+
+    if resume_run_id is not None:
+        run = store.get_evaluation_run(resume_run_id)
+        if run is None or run.collection_id != collection.collection_id:
+            return None
+        if run.settings.get("crop_scope") == "selected":
+            selected = run.settings.get("selected_crop_ids") or []
+            crop_id_filter: set[str] | None = {str(crop_id) for crop_id in selected}
+        else:
+            crop_id_filter = None
+    else:
+        crop_id_filter = set(crop_ids) if crop_ids is not None else None
+
     crops = [
         crop
         for page in store.list_pages(collection.collection_id)
         for crop in store.list_crops_for_page(page.page_id)
         if crop_id_filter is None or crop.crop_id in crop_id_filter
     ]
-    run = store.create_evaluation_run(
-        collection_id=collection.collection_id,
-        pipeline_version=CROP_READINESS_PIPELINE_VERSION,
-        status=EVALUATION_STATUS_RUNNING,
-        enabled_sources=[],
-        settings={
-            "mode": "crop_readiness_only",
-            "ai_vision": vision_mode,
-            "vision_model": vision_adapter.model_name if vision_adapter else None,
-            "crop_scope": "selected" if crop_id_filter is not None else "collection",
-            "selected_crop_ids": sorted(crop_id_filter) if crop_id_filter is not None else [],
-            "source_matching": "not_connected",
-            "market_pricing": "not_connected",
-            "cost_estimate": _estimate_cost_for_run(vision_adapter, crops),
-        },
-        vision_model=vision_adapter.model_name if vision_adapter else None,
-    )
 
-    errors: list[str] = []
+    if resume_run_id is not None:
+        # A valuation record is the last write for a crop in a run, so crops
+        # with one are already fully processed and are not repeated.
+        pending_crops = [
+            crop
+            for crop in crops
+            if store.get_stamp_valuation_for_crop(run.run_id, crop.crop_id) is None
+        ]
+        errors: list[str] = list(run.errors)
+        run = store.update_evaluation_run(
+            replace(run, status=EVALUATION_STATUS_RUNNING, finished_at=None)
+        )
+    else:
+        run = store.create_evaluation_run(
+            collection_id=collection.collection_id,
+            pipeline_version=CROP_READINESS_PIPELINE_VERSION,
+            status=EVALUATION_STATUS_RUNNING,
+            enabled_sources=[],
+            settings={
+                "mode": "crop_readiness_only",
+                "ai_vision": vision_mode,
+                "vision_model": vision_adapter.model_name if vision_adapter else None,
+                "crop_scope": "selected" if crop_id_filter is not None else "collection",
+                "selected_crop_ids": sorted(crop_id_filter) if crop_id_filter is not None else [],
+                "source_matching": "not_connected",
+                "market_pricing": "not_connected",
+                "cost_estimate": _estimate_cost_for_run(vision_adapter, crops),
+            },
+            vision_model=vision_adapter.model_name if vision_adapter else None,
+        )
+        pending_crops = crops
+        errors = []
+
     skipped_vision_for_crop_review = False
     successful_vision_count = 0
 
-    total_crops = len(crops)
-    for index, crop in enumerate(crops, start=1):
+    total_crops = len(pending_crops)
+    for index, crop in enumerate(pending_crops, start=1):
         if progress_callback is not None:
             progress_callback(index, total_crops, crop)
         vision_observation_status = "not_connected"
@@ -84,7 +116,7 @@ def evaluate_collection_readiness(
         if vision_adapter and crop.review_state != REVIEW_NEEDS_CROP_REVIEW:
             try:
                 observation = store.add_stamp_observation(
-                    vision_adapter.observe_crop(crop, run.run_id)
+                    _observe_with_retries(vision_adapter, crop, run.run_id)
                 )
                 vision_observation_status = "available"
                 successful_vision_count += 1
@@ -119,7 +151,7 @@ def evaluate_collection_readiness(
     ]
     if vision_adapter is None:
         warnings.append("ai_vision_not_connected")
-    elif successful_vision_count == 0 and crops:
+    elif successful_vision_count == 0 and pending_crops:
         warnings.append("ai_vision_produced_no_observations")
     if errors:
         warnings.append("ai_vision_failed_on_some_crops")
@@ -129,6 +161,8 @@ def evaluate_collection_readiness(
         warnings.append("no_crops_available")
     if collection.needs_crop_review_count:
         warnings.append("crop_review_remaining")
+    if resume_run_id is not None:
+        warnings.append("run_resumed_after_interruption")
 
     completed = replace(
         run,
@@ -146,6 +180,22 @@ def evaluate_collection_readiness(
         errors=errors,
     )
     return store.update_evaluation_run(completed)
+
+
+def _observe_with_retries(
+    vision_adapter: VisionObservationAdapter,
+    crop: StampCrop,
+    run_id: str,
+) -> StampObservationRecord:
+    attempts = len(VISION_RETRY_BACKOFF_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            return vision_adapter.observe_crop(crop, run_id)
+        except VisionObservationError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(VISION_RETRY_BACKOFF_SECONDS[attempt])
+    raise VisionObservationError("unreachable retry state")
 
 
 def _readiness_observation(

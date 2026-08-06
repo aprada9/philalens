@@ -2,6 +2,11 @@
 
 Last updated: 2026-07-02
 
+> **SUPERSEDED (2026-08-06):** this plan is replaced by
+> `docs/rebuild-plan-v2.md` after a full code audit and user decisions
+> (OpenAI provider, personal-collection scope, React SPA rewrite, recapture
+> loop). Kept for history; do not use as the execution plan.
+
 This file is the execution plan for turning the current local crop/review MVP
 into the final useful Philalens tool: an evidence-backed stamp identification
 and value-triage assistant for a large album-photo collection.

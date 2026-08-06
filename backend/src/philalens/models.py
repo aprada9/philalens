@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-
 REVIEW_UNREVIEWED = "unreviewed"
 REVIEW_NEEDS_CROP_REVIEW = "needs_crop_review"
 REVIEW_NEEDS_BETTER_IMAGE = "needs_better_image"
@@ -16,74 +15,7 @@ EVALUATION_STATUS_PENDING = "pending"
 EVALUATION_STATUS_RUNNING = "running"
 EVALUATION_STATUS_COMPLETED = "completed"
 EVALUATION_STATUS_FAILED = "failed"
-
-
-@dataclass(frozen=True)
-class Evidence:
-    source: str
-    summary: str
-    url: str | None = None
-    confidence: float | None = None
-
-
-@dataclass(frozen=True)
-class StampObservation:
-    crop_id: str
-    page_id: str
-    bbox_xywh: tuple[int, int, int, int] | None = None
-    crop_image_path: str | None = None
-    segmentation_confidence: float | None = None
-    review_state: str = REVIEW_UNREVIEWED
-    segmentation_warnings: list[str] = field(default_factory=list)
-    visible_text: list[str] = field(default_factory=list)
-    country_hint: str | None = None
-    denomination_hint: str | None = None
-    color_hints: list[str] = field(default_factory=list)
-    condition_notes: list[str] = field(default_factory=list)
-    description: str | None = None
-
-
-@dataclass(frozen=True)
-class CatalogCandidate:
-    title: str
-    catalog_id: str | None = None
-    issuer: str | None = None
-    year: int | None = None
-    confidence: float = 0.0
-    evidence: list[Evidence] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class StampAssessment:
-    observation: StampObservation
-    candidates: list[CatalogCandidate] = field(default_factory=list)
-    estimated_value_low: float | None = None
-    estimated_value_high: float | None = None
-    currency: str = "USD"
-    valuation_confidence: float = 0.0
-    valuation_notes: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class PageAnalysis:
-    page_id: str
-    image_filename: str
-    normalized_image_path: str | None = None
-    width: int | None = None
-    height: int | None = None
-    stamps: list[StampAssessment] = field(default_factory=list)
-    quality_warnings: list[str] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class CollectionSummary:
-    page_count: int
-    stamp_count: int
-    estimated_value_low: float | None
-    estimated_value_high: float | None
-    currency: str = "USD"
-    needs_crop_review_count: int = 0
+EVALUATION_STATUS_INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True)
@@ -222,15 +154,4 @@ class StampValuationRecord:
     uncertainty_warnings: list[str] = field(default_factory=list)
     recommended_next_action: str | None = None
     evidence_ids: list[str] = field(default_factory=list)
-    created_at: str | None = None
-
-
-@dataclass(frozen=True)
-class EmbeddingRecord:
-    embedding_id: str
-    owner_type: str
-    owner_id: str
-    model_name: str
-    embedding_dimension: int
-    embedding_vector: list[float] = field(default_factory=list)
     created_at: str | None = None

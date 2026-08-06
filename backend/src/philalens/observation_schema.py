@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from .models import StampObservationRecord
 from .storage import new_id
 
-
 OBSERVATION_SCHEMA_VERSION: Literal["stamp-observation-v1"] = "stamp-observation-v1"
 
 CancellationState = Literal[

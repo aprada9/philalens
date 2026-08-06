@@ -1,6 +1,32 @@
 # Philalens Agent Context
 
-Last updated: 2026-07-02
+Last updated: 2026-08-06
+
+## Plan V2 (2026-08-06) — read this first
+
+A full code audit (2026-08-06) concluded ~35-40% of the codebase is worth
+keeping. The execution plan is now `docs/rebuild-plan-v2.md`, which supersedes
+`docs/final-tool-build-plan.md`. Key user decisions locked in that plan:
+
+- OpenAI stays the only vision provider (fix the existing path).
+- Scope is the user's own ~80-page collection, not a general product.
+- The user has physical album access: the recapture loop is real.
+- The inline-HTML visualizer will be rewritten as a Vite + React SPA.
+- Valuation uses a three-tier funnel: cheap LLM identification + prior value
+  bucket for every crop, market evidence (web/eBay) for flagged outliers only,
+  recapture kit + optional expert review for the shortlist.
+
+Phase 0 of the plan was completed on 2026-08-06: dead code deleted
+(`pipeline.py`, `/analyze/pages`, placeholder dataclasses, embedding table),
+settings now read env lazily with `.env` loaded at startup (runtime settings
+changes take effect immediately), crop `bbox_xywh` always matches the saved
+crop image pixels, the YOLO model is cached per path, evaluation runs are
+resumable (`interrupted` status at startup, resume endpoint, per-crop
+valuation checkpoints, vision retries with backoff), redetect cleans orphaned
+crop files, and `DELETE /api/collections/{id}` exists. Remaining known issue
+for Phase 1: the XSS via `innerHTML` in the old visualizer (dies with the
+React rewrite) and the costing dashboard removal (deferred because the old UI
+renders it).
 
 ## User Intent
 

@@ -8,7 +8,6 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".heic",
     ".heif",

@@ -15,6 +15,8 @@ import numpy as np
 from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, StampCrop
 from .storage import new_id
 
+_yolo_model_cache: dict[str, Any] = {}
+
 
 @dataclass(frozen=True)
 class DetectionBox:
@@ -61,11 +63,13 @@ def detect_stamp_crops(
 
     for index, detection in enumerate(_sort_boxes(detections), start=1):
         box = detection.bbox_xywh
-        x, y, box_width, box_height = box
+        # The padded box is both written to disk and stored as bbox_xywh, so the
+        # stored box always describes the saved crop image's exact pixels.
         padded = _pad_box(box, width, height)
         crop_path = crop_dir / f"{page_id}_stamp_{index:03d}.jpg"
         _write_crop(image, padded, crop_path)
 
+        # Warnings/confidence describe the raw detection box, not the padding.
         warnings = _box_warnings(box, width, height)
         if detection.confidence is not None and detection.confidence < 0.35:
             warnings.append("low_detector_confidence")
@@ -85,7 +89,7 @@ def detect_stamp_crops(
                 crop_id=new_id("crop"),
                 page_id=page_id,
                 crop_index=index,
-                bbox_xywh=(x, y, box_width, box_height),
+                bbox_xywh=padded,
                 crop_path=str(crop_path),
                 segmentation_confidence=confidence,
                 review_state=review_state,
@@ -121,7 +125,9 @@ def recrop_stamp(
     rotation_degrees = _normalize_rotation(rotation_degrees)
     crop_dir.mkdir(parents=True, exist_ok=True)
     crop_path = crop_dir / f"{page_id}_stamp_{crop_index:03d}_manual.jpg"
-    _write_crop(image, _pad_box(box, width, height), crop_path, rotation_degrees)
+    # User-drawn boxes are authoritative: write exactly the clamped box so the
+    # stored bbox always matches the saved crop image.
+    _write_crop(image, box, crop_path, rotation_degrees)
 
     warnings = _box_warnings(box, width, height)
     confidence = max(0.75, _box_confidence(box, warnings, width, height))
@@ -207,7 +213,11 @@ def _find_yolo_boxes(
     except ModuleNotFoundError as exc:
         raise RuntimeError("yolo_detector_dependency_missing") from exc
 
-    model = ultralytics.YOLO(str(yolo_model_path))
+    cache_key = str(yolo_model_path.resolve())
+    model = _yolo_model_cache.get(cache_key)
+    if model is None:
+        model = ultralytics.YOLO(str(yolo_model_path))
+        _yolo_model_cache[cache_key] = model
     result = model(str(normalized_image_path), conf=confidence, verbose=False)[0]
     if result.boxes is None:
         return []

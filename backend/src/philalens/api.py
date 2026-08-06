@@ -12,7 +12,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from .config import PROJECT_ROOT, Settings, settings
+from .config import PROJECT_ROOT, get_settings
 from .costing import (
     build_cost_dashboard,
     estimate_openai_vision_run_cost,
@@ -22,7 +22,6 @@ from .evaluation import evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
 from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord, StampCrop
-from .pipeline import build_empty_page_analysis, summarize_collection
 from .segmentation import detect_stamp_crops, recrop_stamp
 from .storage import PhilalensStore, new_id
 from .vision import VisionObservationError, build_vision_adapter_from_settings
@@ -60,15 +59,18 @@ class AppSettingsUpdate(BaseModel):
     openai_vision_detail: str = Field(default="high")
 
 
+_startup_settings = get_settings()
 app = FastAPI(
-    title=settings.app_name,
+    title=_startup_settings.app_name,
     version="0.2.0",
     description="Local stamp collection intake, segmentation, review, and export API.",
 )
-store = PhilalensStore(settings.database_path)
+store = PhilalensStore(_startup_settings.database_path)
 store.initialize()
+store.mark_interrupted_evaluation_runs()
 evaluation_jobs: dict[str, dict[str, object]] = {}
 evaluation_jobs_lock = Lock()
+_MAX_TRACKED_EVALUATION_JOBS = 50
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -88,6 +90,7 @@ def list_collections() -> list[dict[str, object]]:
 
 @app.post("/api/collections")
 async def create_collection(files: list[UploadFile] = File(...)) -> dict[str, object]:
+    settings = get_settings()
     if not files:
         raise HTTPException(status_code=400, detail="Upload at least one image.")
     if len(files) > settings.max_upload_files:
@@ -176,7 +179,7 @@ def evaluate_collection(
     collection_id: str, selection: CropSelection | None = None
 ) -> dict[str, object]:
     try:
-        vision_adapter = build_vision_adapter_from_settings(settings)
+        vision_adapter = build_vision_adapter_from_settings(get_settings())
     except VisionObservationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -236,6 +239,46 @@ def get_evaluation_job(job_id: str) -> dict[str, object]:
     return _get_evaluation_job_or_404(job_id)
 
 
+@app.post("/api/evaluation-runs/{run_id}/resume")
+def resume_evaluation_run(run_id: str) -> dict[str, object]:
+    run = store.get_evaluation_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Evaluation run not found.")
+    if run.status not in {"interrupted", "failed"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only interrupted or failed runs can be resumed (status: {run.status}).",
+        )
+
+    job_id = new_id("evaljob")
+    _set_evaluation_job(
+        job_id,
+        {
+            "job_id": job_id,
+            "collection_id": run.collection_id,
+            "status": "queued",
+            "current": 0,
+            "total": 0,
+            "current_crop_id": None,
+            "current_crop_label": None,
+            "current_crop_image_url": None,
+            "message": "Queued evaluation resume",
+            "error": None,
+            "cost_estimate": run.settings.get("cost_estimate"),
+            "cost_actual": None,
+            "resumed_run_id": run.run_id,
+        },
+    )
+    thread = Thread(
+        target=_run_evaluation_job,
+        args=(job_id, run.collection_id, None),
+        kwargs={"resume_run_id": run.run_id},
+        daemon=True,
+    )
+    thread.start()
+    return _get_evaluation_job_or_404(job_id)
+
+
 @app.post("/api/collections/{collection_id}/evaluation-cost-estimate")
 def estimate_collection_evaluation_cost(
     collection_id: str, selection: CropSelection | None = None
@@ -248,6 +291,7 @@ def estimate_collection_evaluation_cost(
 
 @app.get("/api/settings")
 def get_app_settings() -> dict[str, object]:
+    settings = get_settings()
     return {
         "vision_provider": settings.vision_provider,
         "openai_api_key_set": bool(settings.openai_api_key),
@@ -259,8 +303,6 @@ def get_app_settings() -> dict[str, object]:
 
 @app.post("/api/settings")
 def update_app_settings(update: AppSettingsUpdate) -> dict[str, object]:
-    global settings
-
     provider = update.vision_provider.strip().lower() or "none"
     if provider not in {"none", "openai"}:
         raise HTTPException(status_code=400, detail="Vision provider must be none or openai.")
@@ -276,7 +318,6 @@ def update_app_settings(update: AppSettingsUpdate) -> dict[str, object]:
     _write_env_values(PROJECT_ROOT / ".env", values)
     for key, value in values.items():
         environ[key] = value
-    settings = Settings()
     return get_app_settings()
 
 
@@ -464,9 +505,12 @@ def create_manual_crop(page_id: str, create: CropCreate) -> dict[str, object]:
 
 @app.post("/api/pages/{page_id}/redetect")
 def redetect_page(page_id: str) -> dict[str, object]:
+    settings = get_settings()
     page = store.get_page(page_id)
     if page is None:
         raise HTTPException(status_code=404, detail="Page not found.")
+
+    old_crop_paths = {Path(crop.crop_path) for crop in store.list_crops_for_page(page.page_id)}
 
     segmentation = detect_stamp_crops(
         page_id=page.page_id,
@@ -478,6 +522,10 @@ def redetect_page(page_id: str) -> dict[str, object]:
         margin_percent=settings.stamp_crop_margin_percent,
     )
     store.replace_page_crops(page.page_id, segmentation.crops)
+
+    new_crop_paths = {Path(crop.crop_path) for crop in segmentation.crops}
+    for orphaned in old_crop_paths - new_crop_paths:
+        orphaned.unlink(missing_ok=True)
 
     export = build_collection_export(store, page.collection_id)
     if export is None:
@@ -502,6 +550,17 @@ def delete_page(page_id: str) -> dict[str, object]:
     return export
 
 
+@app.delete("/api/collections/{collection_id}")
+def delete_collection(collection_id: str) -> dict[str, object]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    store.delete_collection(collection_id)
+    collection_dir = get_settings().collections_dir / collection_id
+    shutil.rmtree(collection_dir, ignore_errors=True)
+    return {"deleted": collection_id}
+
+
 @app.get("/media/pages/{page_id}/normalized")
 def get_normalized_page(page_id: str) -> FileResponse:
     page = store.get_page(page_id)
@@ -516,25 +575,6 @@ def get_crop_image(crop_id: str) -> FileResponse:
     if crop is None:
         raise HTTPException(status_code=404, detail="Crop not found.")
     return _file_response(Path(crop.crop_path), f"{crop.crop_id}.jpg")
-
-
-@app.post("/analyze/pages")
-async def analyze_pages(files: list[UploadFile] = File(...)) -> dict[str, object]:
-    """Backward-compatible placeholder endpoint from the initial skeleton."""
-    pages = [
-        build_empty_page_analysis(
-            page_id=f"page-{index + 1}",
-            image_filename=file.filename or f"page-{index + 1}.jpg",
-        )
-        for index, file in enumerate(files)
-    ]
-    summary = summarize_collection(pages)
-
-    return {
-        "pages": [asdict(page) for page in pages],
-        "summary": asdict(summary),
-        "note": "Use /api/collections for persisted local intake and segmentation.",
-    }
 
 
 async def _persist_upload(upload: UploadFile, destination: Path) -> None:
@@ -574,6 +614,7 @@ def _build_evaluation_cost_estimate(
     collection_id: str,
     crop_ids: list[str] | None = None,
 ) -> dict[str, object]:
+    settings = get_settings()
     crops = _evaluation_crops(collection_id, crop_ids)
     billable_crops = [crop for crop in crops if crop.review_state != REVIEW_NEEDS_CROP_REVIEW]
     skipped_crop_review_count = len(crops) - len(billable_crops)
@@ -644,10 +685,15 @@ def _api_cost_label(cost_payload: object) -> str | None:
     return f"${cost:.4f}" if float(cost) < 0.01 else f"${cost:.2f}"
 
 
-def _run_evaluation_job(job_id: str, collection_id: str, crop_ids: list[str] | None) -> None:
+def _run_evaluation_job(
+    job_id: str,
+    collection_id: str,
+    crop_ids: list[str] | None,
+    resume_run_id: str | None = None,
+) -> None:
     _update_evaluation_job(job_id, status="running", message="Starting evaluation")
     try:
-        vision_adapter = build_vision_adapter_from_settings(settings)
+        vision_adapter = build_vision_adapter_from_settings(get_settings())
 
         def report_progress(current: int, total: int, crop) -> None:
             _update_evaluation_job(
@@ -667,6 +713,7 @@ def _run_evaluation_job(job_id: str, collection_id: str, crop_ids: list[str] | N
             vision_adapter=vision_adapter,
             crop_ids=crop_ids,
             progress_callback=report_progress,
+            resume_run_id=resume_run_id,
         )
         if run is None:
             _update_evaluation_job(
@@ -703,6 +750,15 @@ def _run_evaluation_job(job_id: str, collection_id: str, crop_ids: list[str] | N
 def _set_evaluation_job(job_id: str, payload: dict[str, object]) -> None:
     with evaluation_jobs_lock:
         evaluation_jobs[job_id] = payload
+        # Bound the in-memory progress map: drop the oldest finished jobs.
+        if len(evaluation_jobs) > _MAX_TRACKED_EVALUATION_JOBS:
+            finished = [
+                tracked_id
+                for tracked_id, job in evaluation_jobs.items()
+                if job.get("status") in {"completed", "failed"}
+            ]
+            for tracked_id in finished[: len(evaluation_jobs) - _MAX_TRACKED_EVALUATION_JOBS]:
+                evaluation_jobs.pop(tracked_id, None)
 
 
 def _update_evaluation_job(job_id: str, **updates: object) -> None:

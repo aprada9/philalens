@@ -147,6 +147,12 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     assert job_payload["run_id"]
     assert job_payload["cost_actual"]["api_call_count"] == 0
 
+    resume_completed_response = client.post(
+        f"/api/evaluation-runs/{job_payload['run_id']}/resume"
+    )
+    assert resume_completed_response.status_code == 400
+    assert client.post("/api/evaluation-runs/run_missing/resume").status_code == 404
+
     mark_ready_response = client.post(
         "/api/crops/mark-ready",
         json={"crop_ids": [crop_id]},
@@ -192,3 +198,85 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     assert delete_page_payload["collection"]["page_count"] == 0
     assert delete_page_payload["collection"]["stamp_count"] == 0
     assert delete_page_payload["pages"] == []
+
+    collection_id = payload["collection"]["collection_id"]
+    delete_collection_response = client.delete(f"/api/collections/{collection_id}")
+    assert delete_collection_response.status_code == 200
+    assert client.get(f"/api/collections/{collection_id}").status_code == 404
+    assert client.delete(f"/api/collections/{collection_id}").status_code == 404
+    collection_dirs = list((tmp_path / "data" / "collections").glob(collection_id))
+    assert collection_dirs == []
+
+
+def test_settings_update_takes_effect_without_restart(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PHILALENS_OPENAI_VISION_MODEL", raising=False)
+    monkeypatch.delenv("PHILALENS_OPENAI_VISION_DETAIL", raising=False)
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+    # Redirect the .env write away from the real repository root.
+    monkeypatch.setattr(philalens.api, "PROJECT_ROOT", tmp_path)
+
+    client = TestClient(philalens.api.app)
+    before = client.get("/api/settings").json()
+    assert before["vision_provider"] == "none"
+    assert before["openai_api_key_set"] is False
+
+    update_response = client.post(
+        "/api/settings",
+        json={
+            "vision_provider": "openai",
+            "openai_api_key": "sk-test",
+            "openai_vision_model": "gpt-test",
+            "openai_vision_detail": "low",
+        },
+    )
+    assert update_response.status_code == 200
+
+    after = client.get("/api/settings").json()
+    assert after["vision_provider"] == "openai"
+    assert after["openai_api_key_set"] is True
+    assert after["openai_vision_model"] == "gpt-test"
+    assert after["openai_vision_detail"] == "low"
+
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "PHILALENS_VISION_PROVIDER=openai" in env_text
+    assert "OPENAI_API_KEY=sk-test" in env_text
+
+
+def test_redetect_removes_orphaned_manual_crop_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+
+    client = TestClient(philalens.api.app)
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    assert upload.status_code == 200
+    page_id = upload.json()["pages"][0]["page_id"]
+
+    manual = client.post(
+        f"/api/pages/{page_id}/crops",
+        json={"bbox_xywh": [320, 340, 120, 140]},
+    )
+    assert manual.status_code == 200
+    manual_files = list((tmp_path / "data" / "collections").glob("**/crops/*_manual.jpg"))
+    assert len(manual_files) == 1
+
+    redetect = client.post(f"/api/pages/{page_id}/redetect")
+    assert redetect.status_code == 200
+    assert redetect.json()["collection"]["stamp_count"] == 1
+    assert list((tmp_path / "data" / "collections").glob("**/crops/*_manual.jpg")) == []

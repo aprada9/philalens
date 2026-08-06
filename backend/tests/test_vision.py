@@ -14,7 +14,6 @@ from philalens.vision import (
     build_vision_adapter_from_settings,
 )
 
-
 VALID_OBSERVATION = {
     "schema_version": OBSERVATION_SCHEMA_VERSION,
     "visible_text": ["FRANCE", "25"],

@@ -1,9 +1,13 @@
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
+import philalens.evaluation
 from philalens.evaluation import evaluate_collection_readiness
 from philalens.exports import build_collection_export, build_evaluation_run_export
 from philalens.models import (
+    EVALUATION_STATUS_RUNNING,
     REVIEW_NEEDS_CROP_REVIEW,
     PageImageRecord,
     StampCrop,
@@ -11,6 +15,11 @@ from philalens.models import (
 )
 from philalens.storage import PhilalensStore
 from philalens.vision import VisionObservationError
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_backoff(monkeypatch) -> None:
+    monkeypatch.setattr(philalens.evaluation, "VISION_RETRY_BACKOFF_SECONDS", ())
 
 
 class FakeVisionAdapter:
@@ -252,3 +261,115 @@ def test_evaluate_collection_readiness_records_vision_failures(tmp_path: Path) -
     assert valuation.recommended_next_action == "rerun observation extraction"
     assert "vision_extraction_failed" in valuation.uncertainty_warnings
     assert "vision_adapter_not_connected" not in valuation.uncertainty_warnings
+
+
+class FlakyVisionAdapter(FakeVisionAdapter):
+    adapter_name = "flaky_vision"
+
+    def __init__(self, failures_before_success: int) -> None:
+        super().__init__()
+        self.remaining_failures = failures_before_success
+
+    def observe_crop(self, crop: StampCrop, run_id: str) -> StampObservationRecord:
+        if self.remaining_failures > 0:
+            self.remaining_failures -= 1
+            raise VisionObservationError("transient provider error")
+        return super().observe_crop(crop, run_id)
+
+
+def _collection_with_clean_crops(store: PhilalensStore, tmp_path: Path, crop_ids: list[str]):
+    collection = store.create_collection(title="evaluation fixture")
+    page = PageImageRecord(
+        page_id="page_1",
+        collection_id=collection.collection_id,
+        page_order=1,
+        original_filename="album.jpg",
+        original_path=str(tmp_path / "album.jpg"),
+        normalized_path=str(tmp_path / "normalized.jpg"),
+        image_format="JPEG",
+        width=1200,
+        height=900,
+    )
+    store.add_page(page)
+    store.replace_page_crops(
+        page.page_id,
+        [
+            StampCrop(
+                crop_id=crop_id,
+                page_id=page.page_id,
+                crop_index=index,
+                bbox_xywh=(10 + 130 * index, 20, 100, 120),
+                crop_path=str(tmp_path / f"{crop_id}.jpg"),
+                segmentation_confidence=0.88,
+            )
+            for index, crop_id in enumerate(crop_ids, start=1)
+        ],
+    )
+    return collection
+
+
+def test_vision_calls_retry_transient_failures(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(philalens.evaluation, "VISION_RETRY_BACKOFF_SECONDS", (0.0, 0.0))
+    store = PhilalensStore(tmp_path / "philalens.sqlite")
+    store.initialize()
+    collection = _collection_with_clean_crops(store, tmp_path, ["crop_clean"])
+    adapter = FlakyVisionAdapter(failures_before_success=2)
+
+    run = evaluate_collection_readiness(store, collection.collection_id, vision_adapter=adapter)
+
+    assert run is not None
+    assert run.errors == []
+    assert adapter.seen_crop_ids == ["crop_clean"]
+    observations = store.list_stamp_observations_for_run(run.run_id)
+    assert observations[0].issuer_hint == "France"
+
+
+def test_resume_skips_crops_already_processed_in_run(tmp_path: Path) -> None:
+    store = PhilalensStore(tmp_path / "philalens.sqlite")
+    store.initialize()
+    collection = _collection_with_clean_crops(store, tmp_path, ["crop_done", "crop_pending"])
+
+    interrupted = store.create_evaluation_run(
+        collection_id=collection.collection_id,
+        pipeline_version="crop-readiness-skeleton-v1",
+        status=EVALUATION_STATUS_RUNNING,
+        enabled_sources=[],
+        settings={"crop_scope": "collection", "selected_crop_ids": []},
+        vision_model="fake-vision-model",
+    )
+    adapter = FakeVisionAdapter()
+    # Simulate the checkpoint left by a killed run: crop_done fully processed.
+    store.add_stamp_observation(adapter.observe_crop(_crop(store, "crop_done"), interrupted.run_id))
+    store.add_stamp_valuation(
+        philalens.evaluation._readiness_valuation(
+            interrupted.run_id,
+            _crop(store, "crop_done"),
+            vision_observation_status="available",
+            observation=store.list_stamp_observations_for_run(interrupted.run_id)[0],
+        )
+    )
+    adapter.seen_crop_ids.clear()
+
+    assert store.mark_interrupted_evaluation_runs() == 1
+    assert store.get_evaluation_run(interrupted.run_id).status == "interrupted"
+
+    run = evaluate_collection_readiness(
+        store,
+        collection.collection_id,
+        vision_adapter=adapter,
+        resume_run_id=interrupted.run_id,
+    )
+
+    assert run is not None
+    assert run.run_id == interrupted.run_id
+    assert run.status == "completed"
+    assert adapter.seen_crop_ids == ["crop_pending"]
+    assert "run_resumed_after_interruption" in run.warnings
+    valuations = store.list_stamp_valuations_for_run(run.run_id)
+    assert {valuation.crop_id for valuation in valuations} == {"crop_done", "crop_pending"}
+
+
+def _crop(store: PhilalensStore, crop_id: str) -> StampCrop:
+    crop = store.get_crop(crop_id)
+    assert crop is not None
+    return crop

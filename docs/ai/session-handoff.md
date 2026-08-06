@@ -1,6 +1,47 @@
 # Session Handoff
 
-Last updated: 2026-07-02
+Last updated: 2026-08-06
+
+## Latest Session (2026-08-06, part 2): Phase 0 Complete
+
+Phase 0 of `docs/rebuild-plan-v2.md` was implemented. All 33 tests pass
+(`cd backend && .venv/bin/python -m pytest -q`). Changes:
+
+- Deleted dead code: `pipeline.py`, `/analyze/pages`, placeholder dataclass
+  family in `models.py`, `embedding_index` table + CRUD, `test_pipeline.py`,
+  `test_visualizer.py`.
+- Fixed the settings bug: `Settings` fields use `default_factory` (env read at
+  instantiation), `config.load_env_file` loads `.env` at import without
+  overriding set vars, `api.py` uses `get_settings()` per request. Settings
+  changes now take effect without restart (tested).
+- Crop bbox now matches saved crop pixels: detection stores the padded box;
+  manual recrops write exactly the drawn box (no hidden padding).
+- YOLO model cached per resolved path (was reloaded per page).
+- Evaluation durability: startup marks stale `running`/`pending` runs as
+  `interrupted`; `POST /api/evaluation-runs/{run_id}/resume` resumes
+  interrupted/failed runs skipping crops that already have a valuation record
+  in the run; vision calls retry with `VISION_RETRY_BACKOFF_SECONDS` backoff;
+  in-memory job map bounded to 50 entries.
+- File hygiene: redetect unlinks replaced crop files (incl. `_manual.jpg`);
+  new `DELETE /api/collections/{collection_id}` removes rows via FK cascade
+  plus the collection directory.
+- Deferred to Phase 1: costing-dashboard removal (old visualizer renders it)
+  and the visualizer XSS (dies with the React rewrite).
+
+Next session: Phase 1 — Vite + React + TypeScript SPA under `frontend/`,
+served by FastAPI; port the crop-review interactions, add triage queues and
+stamp detail views; then delete `visualizer.py` and trim `costing.py`.
+
+## Earlier Session (2026-08-06, part 1): Audit + Rebuild Plan V2
+
+A full code audit was performed and a new execution plan written to
+`docs/rebuild-plan-v2.md` (supersedes `docs/final-tool-build-plan.md`).
+
+User decisions: OpenAI-only vision provider, personal-collection scope,
+Vite + React SPA rewrite of the visualizer, recapture loop enabled (user has
+the physical albums). Valuation strategy: three-tier funnel (LLM
+identification + value bucket for all crops → market evidence for outliers →
+recapture kit/expert review for shortlist).
 
 ## Current State
 
