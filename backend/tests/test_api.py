@@ -188,8 +188,6 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
 
     assert settings_response.status_code == 200
     assert "openai_api_key_set" in settings_response.json()
-    assert "cost_dashboard" in settings_response.json()
-    assert settings_response.json()["cost_dashboard"]["evaluation_run_count"] >= 1
 
     delete_page_response = client.delete(f"/api/pages/{page_id}")
 

@@ -23,10 +23,14 @@ changes take effect immediately), crop `bbox_xywh` always matches the saved
 crop image pixels, the YOLO model is cached per path, evaluation runs are
 resumable (`interrupted` status at startup, resume endpoint, per-crop
 valuation checkpoints, vision retries with backoff), redetect cleans orphaned
-crop files, and `DELETE /api/collections/{id}` exists. Remaining known issue
-for Phase 1: the XSS via `innerHTML` in the old visualizer (dies with the
-React rewrite) and the costing dashboard removal (deferred because the old UI
-renders it).
+crop files, and `DELETE /api/collections/{id}` exists.
+
+Phase 1 was completed the same day: the UI is a Vite + React 19 + TypeScript
+SPA under `frontend/` served by FastAPI from `frontend/dist`; `visualizer.py`
+and the costing dashboard are deleted; all model output renders through React
+(the old XSS is gone). The full review workflow was browser-verified against
+a real HEIC page with the YOLO detector. Next: Phase 2 (Tier 1
+identification pass with observation schema v2 + duplicate grouping).
 
 ## User Intent
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .models import EvaluationRunRecord, StampObservationRecord
+from .models import StampObservationRecord
 
 USD_PER_MILLION = 1_000_000
 
@@ -284,68 +284,6 @@ def summarize_observation_costs(
     }
 
 
-def build_cost_dashboard(runs: list[EvaluationRunRecord]) -> dict[str, object]:
-    sorted_runs = sorted(runs, key=lambda run: (run.started_at, run.run_id), reverse=True)
-    total_actual_cost = 0.0
-    total_estimated_cost = 0.0
-    actual_cost_available = True
-    estimated_cost_available = True
-    api_call_count = 0
-    input_tokens = 0
-    output_tokens = 0
-    total_tokens = 0
-    unknown_cost_call_count = 0
-    estimated_api_call_count = 0
-
-    for run in sorted_runs:
-        settings = run.settings
-        actual = settings.get("cost_actual")
-        estimate = settings.get("cost_estimate")
-        if isinstance(actual, dict):
-            api_call_count += _dict_int(actual, "api_call_count")
-            input_tokens += _dict_int(actual, "input_tokens")
-            output_tokens += _dict_int(actual, "output_tokens")
-            total_tokens += _dict_int(actual, "total_tokens")
-            unknown_cost_call_count += _dict_int(actual, "unknown_cost_call_count")
-            actual_cost_value = actual.get("total_cost_usd")
-            known_cost_value = actual.get("known_total_cost_usd")
-            if isinstance(actual_cost_value, int | float):
-                total_actual_cost += float(actual_cost_value)
-            elif isinstance(known_cost_value, int | float):
-                total_actual_cost += float(known_cost_value)
-                actual_cost_available = False
-            elif _dict_int(actual, "api_call_count") > 0:
-                actual_cost_available = False
-
-        if isinstance(estimate, dict):
-            estimated_api_call_count += _dict_int(estimate, "billable_api_call_count")
-            estimate_cost_value = estimate.get("estimated_total_cost_usd")
-            if isinstance(estimate_cost_value, int | float):
-                total_estimated_cost += float(estimate_cost_value)
-            elif _dict_int(estimate, "billable_api_call_count") > 0:
-                estimated_cost_available = False
-
-    latest_run = sorted_runs[0] if sorted_runs else None
-    return {
-        "currency": "USD",
-        "evaluation_run_count": len(sorted_runs),
-        "api_call_count": api_call_count,
-        "estimated_api_call_count": estimated_api_call_count,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
-        "unknown_cost_call_count": unknown_cost_call_count,
-        "actual_cost_available": actual_cost_available,
-        "estimated_cost_available": estimated_cost_available,
-        "total_actual_cost_usd": _round_usd(total_actual_cost),
-        "total_estimated_cost_usd": _round_usd(total_estimated_cost)
-        if estimated_cost_available
-        else None,
-        "latest_run": _dashboard_latest_run(latest_run),
-        "pricing_note": PRICING_NOTE,
-    }
-
-
 def pricing_key_for_model(model: str | None) -> str | None:
     if not model:
         return None
@@ -354,29 +292,6 @@ def pricing_key_for_model(model: str | None) -> str | None:
         if normalized == key or normalized.startswith(f"{key}-"):
             return key
     return None
-
-
-def _dashboard_latest_run(run: EvaluationRunRecord | None) -> dict[str, object] | None:
-    if run is None:
-        return None
-    actual = run.settings.get("cost_actual")
-    estimate = run.settings.get("cost_estimate")
-    actual_cost = actual.get("total_cost_usd") if isinstance(actual, dict) else None
-    estimated_cost = (
-        estimate.get("estimated_total_cost_usd") if isinstance(estimate, dict) else None
-    )
-    api_call_count = _dict_int(actual, "api_call_count") if isinstance(actual, dict) else 0
-    return {
-        "run_id": run.run_id,
-        "collection_id": run.collection_id,
-        "started_at": run.started_at,
-        "finished_at": run.finished_at,
-        "status": run.status,
-        "model": run.vision_model,
-        "actual_cost_usd": actual_cost if isinstance(actual_cost, int | float) else None,
-        "estimated_cost_usd": estimated_cost if isinstance(estimated_cost, int | float) else None,
-        "api_call_count": api_call_count,
-    }
 
 
 def _value(source: Any, key: str) -> Any:
@@ -400,11 +315,6 @@ def _nested_int_value(source: Any, *paths: tuple[str, str]) -> int:
         if isinstance(value, int | float):
             return max(0, int(value))
     return 0
-
-
-def _dict_int(source: dict[str, Any], key: str) -> int:
-    value = source.get(key)
-    return max(0, int(value)) if isinstance(value, int | float) else 0
 
 
 def _rate_payload(rate: OpenAIModelRate | None) -> dict[str, float | None] | None:

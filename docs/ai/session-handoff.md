@@ -2,7 +2,33 @@
 
 Last updated: 2026-08-06
 
-## Latest Session (2026-08-06, part 2): Phase 0 Complete
+## Latest Session (2026-08-06, part 3): Phase 1 Complete — React SPA
+
+The old inline-HTML visualizer is gone. The UI is now a Vite + React 19 +
+TypeScript SPA under `frontend/`, served by FastAPI from `frontend/dist`
+(build with `cd frontend && npm install && npm run build`). Backend: 33 tests
+pass; `visualizer.py` deleted; costing dashboard machinery removed
+(`/api/settings` no longer returns `cost_dashboard`).
+
+SPA features: page list, coverage-mode shading, click-select on page and
+list, stamp list with thumbnails/badges/filter chips (pending review +
+value buckets), multi-select batch delete/mark-ready/evaluate, inspector
+with zoomed crop editor (corner drag-resize, move, rotation handle, numeric
+fields), observation/valuation/candidate/evidence detail, evaluation panel
+with cost estimate, live job progress, resume buttons for interrupted runs,
+settings dialog, JSON/CSV export buttons, collection deletion.
+
+Browser-verified against a real HEIC album page (ALBUM2_0664.HEIC): upload,
+YOLO re-detect (2 OpenCV crops → 54 YOLO crops after installing `.[yolo]`
+and downloading the model), crop drag-resize with image cache-busting,
+evaluate-all job to completion with bucket chips. The YOLO model now lives
+in `data/local/models/` on this machine.
+
+Next session: Phase 2 — extend `stamp-observation-v1` to v2 (candidate
+identity + prior value bucket in one vision call), perceptual-hash duplicate
+grouping, calibrate the prompt on 2-4 real pages with the OpenAI provider.
+
+## Earlier Session (2026-08-06, part 2): Phase 0 Complete
 
 Phase 0 of `docs/rebuild-plan-v2.md` was implemented. All 33 tests pass
 (`cd backend && .venv/bin/python -m pytest -q`). Changes:

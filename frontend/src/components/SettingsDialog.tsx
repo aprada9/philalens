@@ -1,0 +1,96 @@
+import { useEffect, useState } from "react";
+import { getSettings, updateSettings } from "../api";
+
+interface Props {
+  onClose: () => void;
+}
+
+export default function SettingsDialog({ onClose }: Props) {
+  const [provider, setProvider] = useState("none");
+  const [apiKey, setApiKey] = useState("");
+  const [keySet, setKeySet] = useState(false);
+  const [model, setModel] = useState("gpt-4.1-mini");
+  const [detail, setDetail] = useState("high");
+  const [status, setStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const settings = await getSettings();
+        setProvider(settings.vision_provider);
+        setKeySet(settings.openai_api_key_set);
+        setModel(settings.openai_vision_model);
+        setDetail(settings.openai_vision_detail);
+      } catch (exc) {
+        setStatus(String(exc instanceof Error ? exc.message : exc));
+      }
+    })();
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setStatus(null);
+    try {
+      const settings = await updateSettings({
+        vision_provider: provider,
+        ...(apiKey.trim() ? { openai_api_key: apiKey.trim() } : {}),
+        openai_vision_model: model,
+        openai_vision_detail: detail,
+      });
+      setKeySet(settings.openai_api_key_set);
+      setApiKey("");
+      setStatus("Saved. Settings are live immediately.");
+    } catch (exc) {
+      setStatus(String(exc instanceof Error ? exc.message : exc));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <h2>AI vision settings</h2>
+        <div className="field">
+          <label>Vision provider</label>
+          <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+            <option value="none">None (no external calls)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>
+            OpenAI API key {keySet ? "(a key is configured — leave blank to keep it)" : "(not set)"}
+          </label>
+          <input
+            type="password"
+            value={apiKey}
+            placeholder={keySet ? "••••••••" : "sk-..."}
+            onChange={(event) => setApiKey(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label>Vision model</label>
+          <input value={model} onChange={(event) => setModel(event.target.value)} />
+        </div>
+        <div className="field">
+          <label>Image detail</label>
+          <select value={detail} onChange={(event) => setDetail(event.target.value)}>
+            <option value="low">low (cheapest)</option>
+            <option value="auto">auto</option>
+            <option value="high">high (best)</option>
+          </select>
+        </div>
+        {status && <p className="muted">{status}</p>}
+        <div className="actions">
+          <button onClick={onClose}>Close</button>
+          <button className="primary" onClick={() => void save()} disabled={saving}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

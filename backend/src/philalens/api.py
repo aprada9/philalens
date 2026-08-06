@@ -10,14 +10,11 @@ from threading import Lock, Thread
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import PROJECT_ROOT, get_settings
-from .costing import (
-    build_cost_dashboard,
-    estimate_openai_vision_run_cost,
-    non_openai_cost_estimate,
-)
+from .costing import estimate_openai_vision_run_cost, non_openai_cost_estimate
 from .evaluation import evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
@@ -25,7 +22,6 @@ from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord
 from .segmentation import detect_stamp_crops, recrop_stamp
 from .storage import PhilalensStore, new_id
 from .vision import VisionObservationError, build_vision_adapter_from_settings
-from .visualizer import VISUALIZER_HTML
 
 
 class CropUpdate(BaseModel):
@@ -73,9 +69,22 @@ evaluation_jobs_lock = Lock()
 _MAX_TRACKED_EVALUATION_JOBS = 50
 
 
-@app.get("/", response_class=HTMLResponse)
-def visualizer() -> str:
-    return VISUALIZER_HTML
+FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+if (FRONTEND_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+
+@app.get("/")
+def frontend_index() -> Response:
+    index_path = FRONTEND_DIST / "index.html"
+    if index_path.is_file():
+        return FileResponse(index_path)
+    return HTMLResponse(
+        "<h1>Philalens</h1><p>Frontend is not built. Run "
+        "<code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code> "
+        "and restart the server.</p>",
+        status_code=503,
+    )
 
 
 @app.get("/health")
@@ -297,7 +306,6 @@ def get_app_settings() -> dict[str, object]:
         "openai_api_key_set": bool(settings.openai_api_key),
         "openai_vision_model": settings.openai_vision_model,
         "openai_vision_detail": settings.openai_vision_detail,
-        "cost_dashboard": _build_api_cost_dashboard(),
     }
 
 
@@ -653,15 +661,6 @@ def _evaluation_crops(collection_id: str, crop_ids: list[str] | None = None) -> 
                 detail=f"Selected crop not found in collection: {missing_ids[0]}",
             )
     return crops
-
-
-def _build_api_cost_dashboard() -> dict[str, object]:
-    runs = [
-        run
-        for collection in store.list_collections()
-        for run in store.list_evaluation_runs(collection.collection_id)
-    ]
-    return build_cost_dashboard(runs)
 
 
 def _evaluation_complete_message(evaluated_count: int, cost_actual: object) -> str:

@@ -165,7 +165,7 @@ Completed 2026-08-06. Notes:
   `DELETE /api/collections/{id}` removes rows (FK cascade) and the collection
   directory.
 
-### Phase 1: React SPA
+### Phase 1: React SPA — DONE (2026-08-06)
 
 - `frontend/` with Vite + React + TypeScript; FastAPI serves the built assets
   and stays the API.
@@ -178,6 +178,29 @@ Completed 2026-08-06. Notes:
 - Escape/render all model output safely.
 - Acceptance: full crop-curation workflow works in the SPA; old visualizer
   removed.
+
+Completed 2026-08-06. Notes:
+
+- `frontend/` is Vite + React 19 + TypeScript (strict), no other runtime
+  dependencies. `npm run build` outputs `frontend/dist`, which FastAPI mounts
+  at `/assets` and serves at `/` (with a build-instructions page when dist is
+  missing). Vite dev mode proxies `/api` and `/media` to `127.0.0.1:8000`.
+- Components: App (state + layout), PageViewer (SVG page with coverage
+  shading, selection highlight, click-select, manual crop drawing), StampList
+  (thumbnails, review/bucket badges, filter chips, multi-select batch
+  actions), Inspector (crop preview, zoomed SVG crop editor with corner
+  drag-resize, move, rotation handle, numeric fields, observation/valuation/
+  candidate/evidence detail), EvaluationPanel (summary chips, cost estimate,
+  job progress with live crop thumbnail, resume buttons for
+  interrupted/failed runs), SettingsDialog.
+- All model output rendered through React (no innerHTML) — the old XSS is
+  gone. `visualizer.py` deleted; `costing.py` dashboard machinery removed
+  (`/api/settings` no longer returns `cost_dashboard`; per-run cost recording
+  kept).
+- Verified in the browser against a real 4032x3024 HEIC album page: upload,
+  YOLO re-detect (2 OpenCV crops → 54 YOLO crops), select from list and from
+  page, drag-resize commit with crop image cache-busting, evaluate-all job
+  with progress polling and bucket chips, settings dialog.
 
 ### Phase 2: Tier 1 identification pass
 

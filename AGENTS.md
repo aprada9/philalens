@@ -95,9 +95,18 @@ pytest
 uvicorn philalens.api:app --reload
 ```
 
-The local visualizer is served at `http://127.0.0.1:8000/`. Runtime collection
-data is stored under `data/local/` by default and is intentionally ignored by
-Git.
+Frontend setup (Vite + React + TypeScript under `frontend/`):
+
+```bash
+cd frontend
+npm install
+npm run build   # outputs frontend/dist, served by FastAPI at /
+npm run dev     # dev server with /api and /media proxied to 127.0.0.1:8000
+```
+
+The app is served at `http://127.0.0.1:8000/` once `frontend/dist` exists.
+Runtime collection data is stored under `data/local/` by default and is
+intentionally ignored by Git.
 
 The better cropper is optional because it uses Ultralytics/PyTorch. To enable it,
 install `pip install -e ".[dev,yolo]"` from `backend/`, then run
