@@ -72,7 +72,7 @@ def test_openai_adapter_submits_image_and_strict_schema(tmp_path: Path) -> None:
         prompt="Observe this stamp.",
     )
 
-    record = adapter.observe_crop(
+    analysis = adapter.observe_crop(
         StampCrop(
             crop_id="crop_1",
             page_id="page_1",
@@ -84,6 +84,7 @@ def test_openai_adapter_submits_image_and_strict_schema(tmp_path: Path) -> None:
         run_id="run_1",
     )
 
+    record = analysis.observation
     assert record.run_id == "run_1"
     assert record.crop_id == "crop_1"
     assert record.issuer_hint == "France"
@@ -93,6 +94,9 @@ def test_openai_adapter_submits_image_and_strict_schema(tmp_path: Path) -> None:
     assert record.model_metadata["model_name"] == "test-vision-model"
     assert record.model_metadata["api_usage"]["total_tokens"] == 1500
     assert record.model_metadata["api_cost"]["cost_available"] is False
+    # v1 payloads still parse; they simply carry no identity priors.
+    assert analysis.candidates == []
+    assert analysis.prior_value_bucket is None
 
     call = client.responses.calls[0]
     assert call["model"] == "test-vision-model"
@@ -102,6 +106,10 @@ def test_openai_adapter_submits_image_and_strict_schema(tmp_path: Path) -> None:
     assert call["text"]["format"]["strict"] is True
     schema = call["text"]["format"]["schema"]
     assert set(schema["required"]) == set(schema["properties"])
+    assert "identity_candidates" in schema["properties"]
+    assert "prior_value_bucket" in schema["properties"]
+    candidate_schema = schema["$defs"]["IdentityCandidate"]
+    assert set(candidate_schema["required"]) == set(candidate_schema["properties"])
     assert "default" not in json.dumps(schema)
 
     content = call["input"][0]["content"]
@@ -109,6 +117,62 @@ def test_openai_adapter_submits_image_and_strict_schema(tmp_path: Path) -> None:
     assert content[1]["type"] == "input_image"
     assert content[1]["detail"] == "low"
     assert content[1]["image_url"].startswith("data:image/jpeg;base64,")
+
+
+def test_openai_adapter_parses_v2_identity_and_bucket(tmp_path: Path) -> None:
+    crop_path = tmp_path / "stamp.jpg"
+    crop_path.write_bytes(b"fake jpeg payload")
+    payload = {
+        **VALID_OBSERVATION,
+        "schema_version": "stamp-observation-v2",
+        "identity_candidates": [
+            {
+                "country": "France",
+                "series_or_issue": "Sower definitives",
+                "year_range": "1907-1920",
+                "denomination": "25c",
+                "catalog_hint": "Yvert Sower definitive range",
+                "confidence": 0.8,
+                "rationale": "REPUBLIQUE FRANCAISE text and Sower design visible",
+            }
+        ],
+        "prior_value_bucket": "possibly_interesting",
+        "prior_value_rationale": "Early period issue with light cancel.",
+    }
+    adapter = OpenAIStampVisionAdapter(
+        api_key="test-key",
+        model="test-vision-model",
+        client=FakeClient(json.dumps(payload)),
+        prompt="Observe this stamp.",
+    )
+
+    analysis = adapter.observe_crop(
+        StampCrop(
+            crop_id="crop_1",
+            page_id="page_1",
+            crop_index=1,
+            bbox_xywh=(1, 2, 30, 40),
+            crop_path=str(crop_path),
+            segmentation_confidence=0.9,
+        ),
+        run_id="run_1",
+    )
+
+    assert analysis.prior_value_bucket == "possibly_interesting"
+    assert analysis.prior_value_rationale == "Early period issue with light cancel."
+    assert len(analysis.candidates) == 1
+    candidate = analysis.candidates[0]
+    assert candidate.run_id == "run_1"
+    assert candidate.crop_id == "crop_1"
+    assert candidate.source_name == "ai_vision_prior"
+    assert candidate.catalog_id is None
+    assert candidate.issuer == "France"
+    assert candidate.title == "Sower definitives"
+    assert candidate.year == 1907
+    assert candidate.match_score == 0.8
+    assert candidate.rank == 1
+    assert "ai_prior_without_source_evidence" in candidate.contradiction_warnings
+    assert any("catalog_hint (unverified)" in note for note in candidate.variant_notes)
 
 
 def test_openai_adapter_rejects_invalid_model_output(tmp_path: Path) -> None:

@@ -441,15 +441,45 @@ export default function Inspector({
 
       {stamp.identification.candidates.length > 0 && (
         <div className="inspector-block">
-          <h3>Candidates</h3>
+          <h3>Identity candidates</h3>
+          <p className="muted">
+            AI priors from the photo — not verified against any catalog or source.
+          </p>
           {stamp.identification.candidates.map((candidate) => (
-            <dl className="kv" key={candidate.candidate_id}>
-              <dt>#{candidate.rank}</dt>
-              <dd>
-                {candidate.title ?? "Untitled"} ({candidate.source_name}, score{" "}
-                {candidate.match_score.toFixed(2)})
-              </dd>
-            </dl>
+            <div key={candidate.candidate_id} style={{ marginBottom: 10 }}>
+              <div>
+                <span className="badge attention">#{candidate.rank}</span>{" "}
+                <b>{candidate.title ?? candidate.issuer ?? "Unknown"}</b>{" "}
+                <span className="muted">confidence {candidate.match_score.toFixed(2)}</span>
+              </div>
+              <dl className="kv">
+                {candidate.issuer && (
+                  <>
+                    <dt>Country</dt>
+                    <dd>{candidate.issuer}</dd>
+                  </>
+                )}
+                {candidate.year !== null && (
+                  <>
+                    <dt>Year</dt>
+                    <dd>{candidate.year}</dd>
+                  </>
+                )}
+                {candidate.denomination && (
+                  <>
+                    <dt>Denomination</dt>
+                    <dd>{candidate.denomination}</dd>
+                  </>
+                )}
+              </dl>
+              {candidate.variant_notes.length > 0 && (
+                <ul className="muted" style={{ margin: "4px 0", paddingLeft: 18 }}>
+                  {candidate.variant_notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           ))}
         </div>
       )}

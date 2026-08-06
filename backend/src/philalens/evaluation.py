@@ -26,16 +26,23 @@ from .models import (
     StampObservationRecord,
     StampValuationRecord,
 )
-from .observation_schema import DEFAULT_UNOBSERVABLE_FACTORS
+from .observation_schema import DEFAULT_UNOBSERVABLE_FACTORS, VisionAnalysisResult
+from .similarity import group_duplicate_crops
 from .storage import PhilalensStore, new_id, utc_now
 from .triage import triage_observation
 from .vision import VisionObservationAdapter, VisionObservationError
 
-CROP_READINESS_PIPELINE_VERSION = "crop-readiness-skeleton-v1"
+CROP_READINESS_PIPELINE_VERSION = "tier1-identification-v2"
 
 # Backoff before each retry of a failed vision call. Tests may monkeypatch
 # this to () to avoid sleeping.
 VISION_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 3.0)
+
+_PRIOR_BUCKET_ACTIONS = {
+    "likely_common": "no individual review needed; spot-check only",
+    "possibly_interesting": "gather market evidence",
+    "investigate": "gather market evidence and consider expert review",
+}
 
 
 def evaluate_collection_readiness(
@@ -106,30 +113,75 @@ def evaluate_collection_readiness(
 
     skipped_vision_for_crop_review = False
     successful_vision_count = 0
+    vision_api_call_count = 0
+
+    # Near-duplicate crops share one vision call: the representative (first
+    # member) is analyzed and the result is fanned out to the other members.
+    duplicate_of: dict[str, str] = {}
+    representative_ids: set[str] = set()
+    if vision_adapter is not None:
+        eligible = [
+            crop for crop in pending_crops if crop.review_state != REVIEW_NEEDS_CROP_REVIEW
+        ]
+        for group in group_duplicate_crops(eligible):
+            if len(group) < 2:
+                continue
+            representative_ids.add(group[0].crop_id)
+            for member in group[1:]:
+                duplicate_of[member.crop_id] = group[0].crop_id
+    representative_analyses: dict[str, VisionAnalysisResult | None] = {}
 
     total_crops = len(pending_crops)
     for index, crop in enumerate(pending_crops, start=1):
         if progress_callback is not None:
             progress_callback(index, total_crops, crop)
         vision_observation_status = "not_connected"
-        observation: StampObservationRecord | None = None
+        analysis: VisionAnalysisResult | None = None
+        derived_from: str | None = None
         if vision_adapter and crop.review_state != REVIEW_NEEDS_CROP_REVIEW:
-            try:
-                observation = store.add_stamp_observation(
-                    _observe_with_retries(vision_adapter, crop, run.run_id)
-                )
-                vision_observation_status = "available"
-                successful_vision_count += 1
-            except VisionObservationError as exc:
-                vision_observation_status = "failed"
-                errors.append(f"{crop.crop_id}: {exc}")
-                store.add_stamp_observation(
-                    _readiness_observation(
-                        run.run_id,
-                        crop,
-                        extra_warnings=["ai_vision_failed"],
+            representative_id = duplicate_of.get(crop.crop_id)
+            if representative_id is not None and representative_id in representative_analyses:
+                representative_analysis = representative_analyses[representative_id]
+                if representative_analysis is None:
+                    vision_observation_status = "failed"
+                    errors.append(
+                        f"{crop.crop_id}: vision failed on duplicate representative "
+                        f"{representative_id}"
                     )
-                )
+                    store.add_stamp_observation(
+                        _readiness_observation(
+                            run.run_id,
+                            crop,
+                            extra_warnings=["ai_vision_failed", "derived_from_duplicate_failed"],
+                        )
+                    )
+                else:
+                    analysis = _derived_analysis(representative_analysis, crop, representative_id)
+                    derived_from = representative_id
+                    _store_analysis(store, analysis)
+                    vision_observation_status = "available"
+                    successful_vision_count += 1
+            else:
+                try:
+                    analysis = _observe_with_retries(vision_adapter, crop, run.run_id)
+                    _store_analysis(store, analysis)
+                    vision_observation_status = "available"
+                    successful_vision_count += 1
+                    vision_api_call_count += 1
+                    if crop.crop_id in representative_ids:
+                        representative_analyses[crop.crop_id] = analysis
+                except VisionObservationError as exc:
+                    vision_observation_status = "failed"
+                    errors.append(f"{crop.crop_id}: {exc}")
+                    store.add_stamp_observation(
+                        _readiness_observation(
+                            run.run_id,
+                            crop,
+                            extra_warnings=["ai_vision_failed"],
+                        )
+                    )
+                    if crop.crop_id in representative_ids:
+                        representative_analyses[crop.crop_id] = None
         else:
             if vision_adapter and crop.review_state == REVIEW_NEEDS_CROP_REVIEW:
                 vision_observation_status = "skipped_crop_review"
@@ -141,7 +193,8 @@ def evaluate_collection_readiness(
                 run.run_id,
                 crop,
                 vision_observation_status=vision_observation_status,
-                observation=observation,
+                analysis=analysis,
+                derived_from=derived_from,
             )
         )
 
@@ -163,6 +216,8 @@ def evaluate_collection_readiness(
         warnings.append("crop_review_remaining")
     if resume_run_id is not None:
         warnings.append("run_resumed_after_interruption")
+    if duplicate_of:
+        warnings.append("duplicate_crops_shared_vision_results")
 
     completed = replace(
         run,
@@ -170,6 +225,9 @@ def evaluate_collection_readiness(
         finished_at=utc_now(),
         settings={
             **run.settings,
+            "vision_api_call_count": vision_api_call_count,
+            "duplicate_group_count": len(representative_ids),
+            "duplicate_derived_count": len(duplicate_of),
             "cost_actual": summarize_observation_costs(
                 store.list_stamp_observations_for_run(run.run_id),
                 provider=vision_mode,
@@ -182,11 +240,54 @@ def evaluate_collection_readiness(
     return store.update_evaluation_run(completed)
 
 
+def _store_analysis(store: PhilalensStore, analysis: VisionAnalysisResult) -> None:
+    store.add_stamp_observation(analysis.observation)
+    for candidate in analysis.candidates:
+        store.add_catalog_candidate(candidate)
+
+
+def _derived_analysis(
+    analysis: VisionAnalysisResult,
+    crop: StampCrop,
+    representative_crop_id: str,
+) -> VisionAnalysisResult:
+    """Fan a representative's analysis out to a near-duplicate crop."""
+
+    observation = replace(
+        analysis.observation,
+        observation_id=new_id("obs"),
+        crop_id=crop.crop_id,
+        created_at=None,
+        model_metadata={
+            **analysis.observation.model_metadata,
+            "derived_from_duplicate": representative_crop_id,
+        },
+    )
+    candidates = [
+        replace(
+            candidate,
+            candidate_id=new_id("cand"),
+            crop_id=crop.crop_id,
+            contradiction_warnings=[
+                *candidate.contradiction_warnings,
+                "derived_from_duplicate_crop",
+            ],
+        )
+        for candidate in analysis.candidates
+    ]
+    return VisionAnalysisResult(
+        observation=observation,
+        candidates=candidates,
+        prior_value_bucket=analysis.prior_value_bucket,
+        prior_value_rationale=analysis.prior_value_rationale,
+    )
+
+
 def _observe_with_retries(
     vision_adapter: VisionObservationAdapter,
     crop: StampCrop,
     run_id: str,
-) -> StampObservationRecord:
+) -> VisionAnalysisResult:
     attempts = len(VISION_RETRY_BACKOFF_SECONDS) + 1
     for attempt in range(attempts):
         try:
@@ -227,8 +328,13 @@ def _readiness_valuation(
     crop: StampCrop,
     *,
     vision_observation_status: str = "not_connected",
-    observation: StampObservationRecord | None = None,
+    analysis: VisionAnalysisResult | None = None,
+    derived_from: str | None = None,
 ) -> StampValuationRecord:
+    observation = analysis.observation if analysis is not None else None
+    identity_confidence = 0.0
+    candidate_id: str | None = None
+
     if crop.review_state == REVIEW_NEEDS_CROP_REVIEW:
         value_bucket = "needs_better_image"
         recommended_next_action = "review crop"
@@ -242,6 +348,41 @@ def _readiness_valuation(
             "Only the current front crop image is represented.",
         ]
         valuation_confidence = 0.0
+    elif (
+        vision_observation_status == "available"
+        and analysis is not None
+        and observation is not None
+        and analysis.prior_value_bucket
+    ):
+        # V2 path: the vision model proposed identity candidates and a
+        # value-triage bucket. These are priors, never source-backed facts.
+        value_bucket = analysis.prior_value_bucket
+        recommended_next_action = _PRIOR_BUCKET_ACTIONS.get(
+            analysis.prior_value_bucket, "review manually"
+        )
+        identity_confidence = max(
+            (candidate.match_score for candidate in analysis.candidates), default=0.0
+        )
+        top_candidate = min(
+            analysis.candidates, key=lambda candidate: candidate.rank, default=None
+        )
+        candidate_id = top_candidate.candidate_id if top_candidate else None
+        uncertainty_warnings = [
+            "ai_prior_identity_unverified",
+            "market_evidence_not_checked",
+            "unobservable_variants_may_change_value",
+        ]
+        assumptions = [
+            "AI prior from the front photo only; no source or market evidence attached.",
+        ]
+        if analysis.prior_value_rationale:
+            assumptions.append(f"Model rationale: {analysis.prior_value_rationale}")
+        if derived_from:
+            assumptions.append(
+                f"Result copied from visually near-duplicate crop {derived_from}."
+            )
+            uncertainty_warnings.append("derived_from_duplicate_crop")
+        valuation_confidence = round(min(observation.confidence, identity_confidence) * 0.75, 2)
     elif vision_observation_status == "available" and observation is not None:
         triage = triage_observation(observation)
         value_bucket = triage.value_bucket
@@ -280,10 +421,11 @@ def _readiness_valuation(
         valuation_id=new_id("val"),
         run_id=run_id,
         crop_id=crop.crop_id,
+        candidate_id=candidate_id,
         estimated_value_low=None,
         estimated_value_high=None,
         currency="USD",
-        identity_confidence=0.0,
+        identity_confidence=identity_confidence,
         condition_confidence=0.0,
         market_evidence_confidence=0.0,
         valuation_confidence=valuation_confidence,

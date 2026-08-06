@@ -127,7 +127,9 @@ export default function StampList({
           const bucket = stamp.valuation.value_bucket;
           const needsReview = stamp.review_state === "needs_crop_review";
           const attention =
-            bucket === "possibly_interesting" || bucket === "needs_expert_check";
+            bucket === "possibly_interesting" ||
+            bucket === "investigate" ||
+            bucket === "needs_expert_check";
           const pageOrder = pageOrderById.get(pageIdByCrop.get(stamp.crop_id) ?? "") ?? "?";
           return (
             <div

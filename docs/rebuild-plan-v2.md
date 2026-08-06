@@ -202,7 +202,7 @@ Completed 2026-08-06. Notes:
   page, drag-resize commit with crop image cache-busting, evaluate-all job
   with progress polling and bucket chips, settings dialog.
 
-### Phase 2: Tier 1 identification pass
+### Phase 2: Tier 1 identification pass — IMPLEMENTED (2026-08-06); calibration pending
 
 - Extend the observation schema (as `stamp-observation-v2`) with candidate
   identity + prior value bucket; update the prompt.
@@ -214,6 +214,48 @@ Completed 2026-08-06. Notes:
 - Acceptance: calibration pages produce correct country/series for the clear
   majority of crops, honest uncertainty for the rest, and a bucket
   distribution that matches eyeball reality (mostly `likely_common`).
+
+Implementation completed 2026-08-06. Notes:
+
+- `stamp-observation-v2` (`observation_schema.py`): extends v1 with
+  `identity_candidates` (0-3, capped to the strongest, each with country,
+  series, year range, denomination, free-text `catalog_hint`, confidence,
+  rationale) and `prior_value_bucket`
+  (`likely_common` / `possibly_interesting` / `investigate`) + rationale.
+  The parser accepts v1 and v2 payloads. `analysis_from_observation` maps a
+  v2 payload into a `VisionAnalysisResult`: the observation record plus
+  `catalog_candidates` rows (source `ai_vision_prior`, `catalog_id` always
+  null, hint stored as an explicitly-unverified variant note) and the bucket.
+- Prompt rewritten (`prompts/stamp_analysis.md`): observe + identify (prior)
+  + triage in one pass; honesty rules (no invented catalog numbers, common
+  is the default bucket); bucket definitions written for inherited-album
+  reality.
+- Vision adapter returns `VisionAnalysisResult`; the OpenAI strict schema
+  prep now recursively marks nested objects (`IdentityCandidate`) required.
+- Duplicate grouping (`similarity.py`): 64-bit dHash + mean-RGB color guard
+  (so one definitive series in different colors is NOT merged), greedy
+  clustering, unreadable images become singletons. Evaluation makes one
+  vision call per group and fans results out with `derived_from_duplicate`
+  markers on observations, candidates, and valuations. Run settings record
+  `vision_api_call_count`, `duplicate_group_count`, `duplicate_derived_count`.
+- Valuation uses the model's prior bucket when present (next actions mapped
+  per bucket, identity confidence = top candidate score, honest uncertainty
+  warnings, no price ranges); falls back to keyword triage for v1 payloads.
+  Pipeline version is now `tier1-identification-v2`.
+- UI: identity candidates render in the inspector with an explicit
+  "AI priors, not verified" caption; `investigate` styled as an attention
+  bucket.
+- A 3-page calibration collection (ALBUM2_0664, ALBUM6_0751, ALBUM9_0792,
+  108 YOLO-detected crops) exists locally in `data/local/`.
+
+Still pending for Phase 2 acceptance (needs the user's OpenAI API key and an
+explicit run from the UI):
+
+1. Curate crops on the 3 calibration pages (62 flagged for review).
+2. Configure the OpenAI key in Settings; estimate cost; evaluate selected
+   crops or a full page.
+3. Judge identification accuracy and bucket distribution against eyeball
+   reality; iterate the prompt if weak.
 
 ### Phase 3: Tier 2 evidence for outliers
 

@@ -147,3 +147,90 @@ def test_parse_stamp_observation_payload_rejects_invalid_payloads(
 def test_parse_stamp_observation_payload_rejects_non_object_json() -> None:
     with pytest.raises(TypeError):
         parse_stamp_observation_payload("[]")
+
+
+def test_parse_v2_payload_with_identity_and_bucket() -> None:
+    from philalens.observation_schema import (
+        StrictStampObservationV2,
+        analysis_from_observation,
+    )
+
+    payload = {
+        "schema_version": "stamp-observation-v2",
+        "visible_text": ["ESPANA", "80 CTS"],
+        "issuer_hint": "Spain",
+        "denomination_hint": "80 cts",
+        "cancellation_state": "used_light_cancel",
+        "confidence": 0.8,
+        "identity_candidates": [
+            {
+                "country": "Spain",
+                "series_or_issue": "1959 Velazquez set",
+                "year_range": "1959",
+                "denomination": "80 cts",
+                "catalog_hint": "Edifil ~1238-1247",
+                "confidence": 0.75,
+                "rationale": "ESPANA text and Velazquez portrait design",
+            }
+        ],
+        "prior_value_bucket": "likely_common",
+        "prior_value_rationale": "Mass-produced commemorative, used.",
+    }
+
+    observation = parse_stamp_observation_payload(payload)
+    assert isinstance(observation, StrictStampObservationV2)
+    assert observation.prior_value_bucket == "likely_common"
+
+    analysis = analysis_from_observation(observation, run_id="run_1", crop_id="crop_1")
+    assert analysis.prior_value_bucket == "likely_common"
+    assert len(analysis.candidates) == 1
+    assert analysis.candidates[0].issuer == "Spain"
+    assert analysis.candidates[0].year == 1959
+    assert analysis.candidates[0].catalog_id is None
+    assert "ai_prior_without_source_evidence" in analysis.candidates[0].contradiction_warnings
+
+
+def test_v2_caps_candidates_at_three_strongest() -> None:
+    payload = {
+        "schema_version": "stamp-observation-v2",
+        "confidence": 0.5,
+        "identity_candidates": [
+            {"country": f"Country {index}", "confidence": index / 10}
+            for index in range(1, 6)
+        ],
+        "prior_value_bucket": "likely_common",
+    }
+
+    observation = parse_stamp_observation_payload(payload)
+    from philalens.observation_schema import StrictStampObservationV2
+
+    assert isinstance(observation, StrictStampObservationV2)
+    assert len(observation.identity_candidates) == 3
+    assert [candidate.confidence for candidate in observation.identity_candidates] == [
+        0.5,
+        0.4,
+        0.3,
+    ]
+
+
+def test_v2_rejects_unknown_bucket() -> None:
+    payload = {
+        "schema_version": "stamp-observation-v2",
+        "confidence": 0.5,
+        "prior_value_bucket": "very_valuable",
+    }
+
+    with pytest.raises(ValidationError):
+        parse_stamp_observation_payload(payload)
+
+
+def test_v1_analysis_has_no_priors() -> None:
+    from philalens.observation_schema import analysis_from_observation
+
+    observation = parse_stamp_observation_payload(
+        {"schema_version": "stamp-observation-v1", "confidence": 0.4}
+    )
+    analysis = analysis_from_observation(observation, run_id="run_1", crop_id="crop_1")
+    assert analysis.candidates == []
+    assert analysis.prior_value_bucket is None
+    assert analysis.prior_value_rationale is None

@@ -12,9 +12,10 @@ from pydantic import ValidationError
 
 from .config import Settings
 from .costing import openai_cost_for_usage, token_usage_from_response
-from .models import StampCrop, StampObservationRecord
+from .models import StampCrop
 from .observation_schema import (
-    observation_to_record,
+    VisionAnalysisResult,
+    analysis_from_observation,
     parse_stamp_observation_payload,
     stamp_observation_json_schema,
     validation_error_messages,
@@ -36,8 +37,8 @@ class VisionObservationAdapter(Protocol):
     def model_name(self) -> str | None:
         """Provider model identifier, when the adapter has one."""
 
-    def observe_crop(self, crop: StampCrop, run_id: str) -> StampObservationRecord:
-        """Return a validated durable observation for a crop."""
+    def observe_crop(self, crop: StampCrop, run_id: str) -> VisionAnalysisResult:
+        """Return a validated analysis (observation + identity priors) for a crop."""
 
 
 def load_stamp_analysis_prompt() -> str:
@@ -82,7 +83,7 @@ class OpenAIStampVisionAdapter:
             client = OpenAI(api_key=api_key)
         self.client: Any = client
 
-    def observe_crop(self, crop: StampCrop, run_id: str) -> StampObservationRecord:
+    def observe_crop(self, crop: StampCrop, run_id: str) -> VisionAnalysisResult:
         response = self.client.responses.create(
             model=self.model_name,
             input=[
@@ -121,7 +122,7 @@ class OpenAIStampVisionAdapter:
             detail = str(exc)
             raise VisionObservationError(f"Vision response did not match schema: {detail}") from exc
 
-        record = observation_to_record(
+        analysis = analysis_from_observation(
             observation,
             run_id=run_id,
             crop_id=crop.crop_id,
@@ -130,16 +131,17 @@ class OpenAIStampVisionAdapter:
         )
         usage = token_usage_from_response(response)
         if usage["total_tokens"] <= 0:
-            return record
+            return analysis
 
-        return replace(
-            record,
+        record = replace(
+            analysis.observation,
             model_metadata={
-                **record.model_metadata,
+                **analysis.observation.model_metadata,
                 "api_usage": usage,
                 "api_cost": openai_cost_for_usage(self.model_name, usage),
             },
         )
+        return replace(analysis, observation=record)
 
 
 def _image_data_url(path: Path) -> str:
@@ -174,14 +176,28 @@ def _response_output_text(response: Any) -> str:
 
 
 def _openai_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Adjust Pydantic JSON schema for OpenAI strict structured outputs."""
+    """Adjust Pydantic JSON schema for OpenAI strict structured outputs.
+
+    Strict mode requires every object schema (including nested $defs) to list
+    all of its properties as required and to have defaults stripped.
+    """
 
     prepared = dict(schema)
-    properties = prepared.get("properties")
-    if isinstance(properties, dict):
-        prepared["required"] = list(properties.keys())
+    _prepare_object_schemas(prepared)
     _strip_defaults(prepared)
     return prepared
+
+
+def _prepare_object_schemas(value: Any) -> None:
+    if isinstance(value, dict):
+        properties = value.get("properties")
+        if isinstance(properties, dict):
+            value["required"] = list(properties.keys())
+        for item in value.values():
+            _prepare_object_schemas(item)
+    elif isinstance(value, list):
+        for item in value:
+            _prepare_object_schemas(item)
 
 
 def _strip_defaults(value: Any) -> None:

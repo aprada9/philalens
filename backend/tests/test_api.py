@@ -79,13 +79,13 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     )
     assert runs_response.status_code == 200
     run_id = runs_response.json()[0]["run_id"]
-    assert runs_response.json()[0]["pipeline_version"] == "crop-readiness-skeleton-v1"
+    assert runs_response.json()[0]["pipeline_version"] == "tier1-identification-v2"
 
     latest_run_response = client.get(
         f"/api/collections/{payload['collection']['collection_id']}/evaluation-runs/latest"
     )
     assert latest_run_response.status_code == 200
-    assert latest_run_response.json()["run"]["pipeline_version"] == "crop-readiness-skeleton-v1"
+    assert latest_run_response.json()["run"]["pipeline_version"] == "tier1-identification-v2"
     assert latest_run_response.json()["summary"]["evaluated_stamp_count"] == 1
     assert latest_run_response.json()["valuations"][0]["value_bucket"] == "needs_better_image"
 

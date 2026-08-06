@@ -2,7 +2,23 @@
 
 Last updated: 2026-08-06
 
-## Latest Session (2026-08-06, part 3): Phase 1 Complete — React SPA
+## Latest Session (2026-08-06, part 4): Phase 2 Implemented — Tier 1 Identification
+
+All 44 backend tests pass. Implemented per `docs/rebuild-plan-v2.md` Phase 2
+notes: `stamp-observation-v2` (identity candidates + prior value bucket),
+rewritten vision prompt, `VisionAnalysisResult` adapter contract,
+perceptual-hash duplicate grouping (`similarity.py`) with one vision call per
+group and `derived_from_duplicate` fan-out, valuation from model prior
+buckets (pipeline `tier1-identification-v2`), candidates rendered in the
+inspector. A 3-page calibration collection (108 crops) exists in
+`data/local/`.
+
+NEXT STEP (requires the user): curate calibration crops in the UI, set the
+OpenAI API key in Settings, run selected-crop evaluation, and judge
+identification quality; iterate the prompt if needed. Then Phase 3 (market
+evidence adapters for flagged outliers).
+
+## Earlier Session (2026-08-06, part 3): Phase 1 Complete — React SPA
 
 The old inline-HTML visualizer is gone. The UI is now a Vite + React 19 +
 TypeScript SPA under `frontend/`, served by FastAPI from `frontend/dist`

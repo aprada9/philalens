@@ -29,8 +29,16 @@ Phase 1 was completed the same day: the UI is a Vite + React 19 + TypeScript
 SPA under `frontend/` served by FastAPI from `frontend/dist`; `visualizer.py`
 and the costing dashboard are deleted; all model output renders through React
 (the old XSS is gone). The full review workflow was browser-verified against
-a real HEIC page with the YOLO detector. Next: Phase 2 (Tier 1
-identification pass with observation schema v2 + duplicate grouping).
+a real HEIC page with the YOLO detector.
+
+Phase 2 (Tier 1 identification) is implemented: `stamp-observation-v2` adds
+identity candidates (stored as `catalog_candidates` with source
+`ai_vision_prior`, never with a claimed catalog_id) and a prior value bucket
+(`likely_common`/`possibly_interesting`/`investigate`) that drives valuation
+buckets; near-duplicate crops (dHash + color guard in `similarity.py`) share
+one vision call. Calibration against the real OpenAI provider is pending the
+user's API key — see `docs/rebuild-plan-v2.md` Phase 2 notes. Next after
+calibration: Phase 3 (market evidence for flagged outliers).
 
 ## User Intent
 
