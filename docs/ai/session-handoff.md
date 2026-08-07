@@ -2,7 +2,47 @@
 
 Last updated: 2026-08-07
 
-## Latest Session (2026-08-07): UI Redesign — Workflow-First, Light+Dark
+## Latest Session (2026-08-07, part 2): Phase 3 Implemented — Tier 2 Market Evidence
+
+All 64 backend tests pass; frontend typechecks and builds. Implemented per
+`docs/rebuild-plan-v2.md` Phase 3 (see its notes for full detail):
+
+- `sources.py`: adapter interface + `WikidataStampAdapter` (live, verified —
+  needs the contact-URL user agent, falls back to country-level reference
+  items) + `EbayBrowseAdapter` (tested against mocked OAuth/Browse; inactive
+  until eBay keys are set in Settings, stored in `.env` only).
+- `market_evidence.py`: Tier 2 pass enriching the latest completed run;
+  appends one updated valuation per crop; range only from >= 2 realized-sale
+  prices with identity confidence >= 0.5; explicit "No value range:" reasons;
+  asking prices are context only, never estimates.
+- API: `POST /api/crops/{crop_id}/evidence`,
+  `POST /api/collections/{id}/evidence/start` (job),
+  settings expose `market_sources` and accept eBay keys.
+- UI: drawer Gather evidence button live, Market value section (range or
+  withheld reason + asking-price context), Overview batch evidence button,
+  Settings eBay App ID/Cert ID fields.
+- `build_evaluation_summary` now counts only the latest valuation per crop.
+
+IMPORTANT DISCREPANCY (needs the user): the user reported having curated the
+calibration crops and re-run Tier 1 before this session, but
+`data/local/philalens.sqlite` shows neither — 61 crops still
+`needs_crop_review`, and the newest evaluation run is still the 2026-08-06
+16:39 UTC calibration (46 vision calls, $0.069, all 46 `likely_common`,
+issuer split Netherlands 22 / Spain 17 / Uruguay 4 / other 3, which matches
+the known pages). That run itself looks sane. Possibly the curation/re-run
+happened against a different data dir or was not saved; the user should
+verify in the UI (Curate queue should show 61 pending) and redo it if needed.
+
+NEXT STEPS:
+
+1. User: curate the 61 flagged crops and re-run Tier 1 (the previous re-run
+   did not reach the database; see discrepancy note).
+2. User: enter eBay App ID/Cert ID in Settings when the application clears —
+   eBay evidence activates with no code change.
+3. Judge Tier 2 evidence usefulness on flagged stamps (none exist yet — the
+   calibration run flagged nothing), then Phase 4 (recapture kit).
+
+## Earlier Session (2026-08-07, part 1): UI Redesign — Workflow-First, Light+Dark
 
 The user ran the first real OpenAI calibration (46 stamps, $0.07,
 identifications judged good) and approved a full UI/UX redesign from an

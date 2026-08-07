@@ -8,6 +8,7 @@ from dataclasses import asdict
 from io import StringIO
 from typing import Any, cast
 
+from .models import StampValuationRecord
 from .storage import PhilalensStore
 
 
@@ -146,7 +147,12 @@ def build_evaluation_summary(store: PhilalensStore, run_id: str) -> dict[str, ob
     if collection is None:
         return None
 
-    valuations = store.list_stamp_valuations_for_run(run_id)
+    # A crop can gain a newer valuation record within the same run (Tier 2
+    # market-evidence pass); count only the latest record per crop.
+    latest_valuations: dict[str, StampValuationRecord] = {}
+    for valuation in store.list_stamp_valuations_for_run(run_id):
+        latest_valuations[valuation.crop_id] = valuation
+    valuations = list(latest_valuations.values())
     bucket_counts = Counter(valuation.value_bucket for valuation in valuations)
     attention_buckets = {"possibly_interesting", "needs_expert_check"}
     attention_count = sum(bucket_counts[bucket] for bucket in attention_buckets)

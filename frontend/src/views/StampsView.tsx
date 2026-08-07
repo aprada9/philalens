@@ -14,6 +14,7 @@ interface Props {
   onOpenStamp: (cropId: string | null) => void;
   onFixCrop: (cropId: string) => void;
   onReanalyze: (cropId: string) => void;
+  onGatherEvidence: (cropId: string) => void;
   onDeleteCrop: (cropId: string) => void;
 }
 
@@ -42,6 +43,7 @@ export default function StampsView({
   onOpenStamp,
   onFixCrop,
   onReanalyze,
+  onGatherEvidence,
   onDeleteCrop,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -197,6 +199,7 @@ export default function StampsView({
           onClose={() => onOpenStamp(null)}
           onFixCrop={() => onFixCrop(drawerStamp.crop_id)}
           onReanalyze={() => onReanalyze(drawerStamp.crop_id)}
+          onGatherEvidence={() => onGatherEvidence(drawerStamp.crop_id)}
           onDelete={() => onDeleteCrop(drawerStamp.crop_id)}
         />
       )}
@@ -212,6 +215,7 @@ function StampDrawer({
   onClose,
   onFixCrop,
   onReanalyze,
+  onGatherEvidence,
   onDelete,
 }: {
   stamp: Stamp;
@@ -221,6 +225,7 @@ function StampDrawer({
   onClose: () => void;
   onFixCrop: () => void;
   onReanalyze: () => void;
+  onGatherEvidence: () => void;
   onDelete: () => void;
 }) {
   useEffect(() => {
@@ -240,6 +245,17 @@ function StampDrawer({
   const rationale = (valuation.assumptions ?? []).find((item) =>
     item.startsWith("Model rationale:"),
   );
+  const noRangeReason = (valuation.assumptions ?? [])
+    .find((item) => item.startsWith("No value range:"))
+    ?.replace("No value range:", "")
+    .trim();
+  const askingContext = (valuation.assumptions ?? [])
+    .find((item) => item.startsWith("Asking-price context:"))
+    ?.replace("Asking-price context:", "")
+    .trim();
+  const hasRange =
+    valuation.estimated_value_low !== null && valuation.estimated_value_high !== null;
+  const evidenceChecked = hasRange || noRangeReason !== undefined || stamp.evidence.length > 0;
   const catalogHints = (candidate?.variant_notes ?? []).filter((note) =>
     note.startsWith("catalog_hint"),
   );
@@ -340,6 +356,30 @@ function StampDrawer({
           </div>
         )}
 
+        {evidenceChecked && (
+          <div className="d-section">
+            <h4>Market value</h4>
+            {hasRange ? (
+              <div style={{ fontSize: 13 }}>
+                Evidence-backed range: <b>
+                  {valuation.estimated_value_low}–{valuation.estimated_value_high}{" "}
+                  {valuation.currency}
+                </b>{" "}
+                — from realized sales; not a formal appraisal.
+              </div>
+            ) : (
+              <div style={{ fontSize: 13 }} className="muted">
+                No value range{noRangeReason ? ` — ${noRangeReason}` : "."}
+              </div>
+            )}
+            {askingContext && (
+              <div style={{ fontSize: 13, marginTop: 6 }} className="muted">
+                Asking prices (weak evidence): {askingContext}
+              </div>
+            )}
+          </div>
+        )}
+
         {stamp.evidence.length > 0 && (
           <div className="d-section">
             <h4>Evidence</h4>
@@ -348,6 +388,8 @@ function StampDrawer({
                 <dt>{item.source_name}</dt>
                 <dd>
                   {item.evidence_tier ?? item.source_type}
+                  {typeof item.matched_fields?.listing_title === "string" &&
+                    ` · ${item.matched_fields.listing_title}`}
                   {item.price !== null && ` · ${item.price} ${item.currency ?? ""}`}
                   {item.source_url && (
                     <>
@@ -370,7 +412,12 @@ function StampDrawer({
           <button className="btn" onClick={onReanalyze} disabled={busy}>
             ↻ Re-analyze
           </button>
-          <button className="btn" disabled title="Coming in Phase 3">
+          <button
+            className="btn"
+            onClick={onGatherEvidence}
+            disabled={busy}
+            title="Search Wikidata and eBay (when configured) for this stamp's identity"
+          >
             🔍 Gather evidence
           </button>
           <button className="btn danger" onClick={onDelete} disabled={busy}>

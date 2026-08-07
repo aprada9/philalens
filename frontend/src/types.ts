@@ -52,6 +52,9 @@ export interface EvidencePayload {
   currency: string | null;
   evidence_tier: string | null;
   confidence: number;
+  retrieved_at?: string | null;
+  matched_fields?: Record<string, unknown>;
+  license_notes?: string | null;
 }
 
 export interface ValuationPayload {
@@ -134,6 +137,7 @@ export interface CollectionExport {
 export interface EvaluationJob {
   job_id: string;
   collection_id: string;
+  job_type?: string;
   status: string;
   current: number;
   total: number;
@@ -165,4 +169,5 @@ export interface AppSettings {
   openai_api_key_set: boolean;
   openai_vision_model: string;
   openai_vision_detail: string;
+  market_sources: Record<string, string>;
 }

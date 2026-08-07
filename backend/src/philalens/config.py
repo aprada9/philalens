@@ -85,6 +85,18 @@ class Settings:
     openai_vision_detail: str = field(
         default_factory=lambda: _getenv("PHILALENS_OPENAI_VISION_DETAIL", "high")
     )
+    ebay_app_id: str | None = field(
+        default_factory=lambda: _getenv_optional("PHILALENS_EBAY_APP_ID")
+    )
+    ebay_cert_id: str | None = field(
+        default_factory=lambda: _getenv_optional("PHILALENS_EBAY_CERT_ID")
+    )
+    ebay_marketplace: str = field(
+        default_factory=lambda: _getenv("PHILALENS_EBAY_MARKETPLACE", "EBAY_US")
+    )
+    ebay_environment: str = field(
+        default_factory=lambda: _getenv("PHILALENS_EBAY_ENVIRONMENT", "production").lower()
+    )
 
     @property
     def database_path(self) -> Path:

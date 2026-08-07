@@ -257,7 +257,7 @@ explicit run from the UI):
 3. Judge identification accuracy and bucket distribution against eyeball
    reality; iterate the prompt if weak.
 
-### Phase 3: Tier 2 evidence for outliers
+### Phase 3: Tier 2 evidence for outliers — IMPLEMENTED (2026-08-07)
 
 - Source adapter interface (kept from the old plan, narrowed): web search,
   eBay Browse (keyword + image), Wikidata/Commons.
@@ -267,6 +267,48 @@ explicit run from the UI):
   them; otherwise explicit gaps.
 - Acceptance: each `investigate` stamp shows cited evidence and either a range
   or a stated reason there is none.
+
+Implementation completed 2026-08-07. Notes:
+
+- `sources.py`: `EvidenceQuery`/`EvidenceItem`/`SourceAdapter` protocol with
+  explicit evidence tiers (`reference_metadata`, `active_listing_weak`,
+  `realized_sale` — only the last can support a range; no current adapter
+  produces it, the tier exists so sold-price sources plug in later).
+- `WikidataStampAdapter` is live (no key). Wikimedia requires a contact-URL
+  user agent (plain UAs get 403). Wikidata search ANDs terms, so issue-level
+  queries usually miss; the adapter falls back to country-level
+  "postage stamps of {issuer}" items at confidence 0.15. Verified live.
+- `EbayBrowseAdapter` is built and tested (mocked OAuth + Browse search over
+  category 260) but inactive until the user's eBay application review
+  finishes; App ID/Cert ID are entered in Settings and written to `.env`
+  only. Sandbox/production endpoints selectable via
+  `PHILALENS_EBAY_ENVIRONMENT`.
+- `market_evidence.py`: the Tier 2 pass enriches the latest completed run
+  (evidence rows + one appended valuation per crop; newest valuation per crop
+  wins in exports — `build_evaluation_summary` deduplicates accordingly).
+  Default targets are attention buckets; explicit crop selection supported.
+  Range policy: >= 2 realized-sale prices AND identity confidence >= 0.5,
+  else an explicit `No value range: ...` assumption plus
+  `Asking-price context:` lines when listings exist. Adapter failures are
+  recorded per crop and do not abort the pass.
+- API: `POST /api/crops/{crop_id}/evidence` (sync, drawer button) and
+  `POST /api/collections/{id}/evidence/start` (background job over flagged
+  crops). `/api/settings` reports `market_sources` status and accepts eBay
+  keys.
+- UI: the drawer's Gather evidence button is live; a Market value section
+  shows the range or the withheld reason plus asking-price context; Overview
+  gained a batch "gather evidence for all flagged" button; Settings has eBay
+  App ID/Cert ID fields.
+- Web search adapter was deferred: no keyless search API fits the
+  local-first constraint; revisit if Wikidata+eBay evidence proves too thin.
+
+Still pending for Phase 3 acceptance (needs the user):
+
+1. eBay App ID/Cert ID once the developer application clears; enter in
+   Settings and re-gather evidence for flagged stamps.
+2. A Tier 1 re-run that actually produces `investigate` stamps (the first
+   calibration run bucketed all 46 evaluated crops `likely_common`), then
+   judge evidence usefulness per flagged stamp.
 
 ### Phase 4: Shortlist + recapture loop
 

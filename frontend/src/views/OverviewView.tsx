@@ -11,6 +11,7 @@ interface Props {
   onResumeRun: (runId: string) => void;
   onOpenBucket: (bucket: string | null) => void;
   onOpenStamp: (cropId: string) => void;
+  onGatherEvidenceAll: () => void;
   onDeleteCollection: () => void;
 }
 
@@ -34,6 +35,7 @@ export default function OverviewView({
   onResumeRun,
   onOpenBucket,
   onOpenStamp,
+  onGatherEvidenceAll,
   onDeleteCollection,
 }: Props) {
   const stamps = useMemo(() => exp.pages.flatMap((page) => page.stamps), [exp]);
@@ -208,6 +210,13 @@ export default function OverviewView({
             </>
           ) : (
             <p className="muted">No evaluation run yet.</p>
+          )}
+          {attentionStamps.length > 0 && (
+            <div style={{ margin: "10px 0" }}>
+              <button className="btn" onClick={onGatherEvidenceAll} disabled={busy}>
+                🔍 Gather market evidence for all {attentionStamps.length} flagged stamps
+              </button>
+            </div>
           )}
           {attentionStamps.length > 0 ? (
             <div className="attention-grid">

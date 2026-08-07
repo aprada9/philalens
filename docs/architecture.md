@@ -142,6 +142,37 @@ source adapters. Visual similarity should be a supporting signal, likely through
 a local embedding index over crop and reference images, not the only source of
 identity.
 
+### Market Evidence Sources (Tier 2)
+
+`backend/src/philalens/sources.py` defines the source adapter interface:
+`EvidenceQuery` (built from a crop's top AI identity candidate),
+`EvidenceItem`, and a `SourceAdapter` protocol. Two adapters exist:
+
+- `WikidataStampAdapter` (live, no key): keyword search against the Wikidata
+  API with a required contact-URL user agent. Wikidata search ANDs all terms,
+  so when the full issue query matches nothing it falls back to country-level
+  "postage stamps of {issuer}" reference items at lower confidence. Reference
+  metadata only, never prices.
+- `EbayBrowseAdapter` (inactive until `PHILALENS_EBAY_APP_ID` and
+  `PHILALENS_EBAY_CERT_ID` are set via settings/.env): OAuth
+  client-credentials token flow plus Browse keyword search over the Stamps
+  category. Active listings are stored as `active_listing_weak` evidence with
+  asking prices; keys are never committed.
+
+`backend/src/philalens/market_evidence.py` orchestrates the Tier 2 pass. It
+attaches to the latest completed evaluation run, targets crops whose latest
+valuation bucket is `possibly_interesting`, `investigate`, or
+`needs_expert_check` (or an explicit crop selection), stores evidence records,
+and appends an updated valuation per crop in the same run (the newest
+valuation per crop wins in exports and summaries). Value ranges are computed
+only from `realized_sale` evidence (at least two price points and identity
+confidence at or above 0.5); asking prices never set a range and appear only
+as labeled context. Every other outcome writes an explicit
+"No value range: ..." reason into the valuation assumptions. Endpoints:
+`POST /api/crops/{crop_id}/evidence` (single crop, synchronous) and
+`POST /api/collections/{collection_id}/evidence/start` (background job over
+flagged crops, polled via `/api/evaluation-jobs/{job_id}`).
+
 ### Valuation
 
 Combines catalog metadata, condition signals, and market evidence into a range. Every estimate should include confidence and source references.

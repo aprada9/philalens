@@ -122,6 +122,20 @@ export function resumeEvaluationRun(runId: string): Promise<EvaluationJob> {
   return request(`/api/evaluation-runs/${runId}/resume`, { method: "POST" });
 }
 
+export function gatherCropEvidence(cropId: string): Promise<CollectionExport> {
+  return request(`/api/crops/${cropId}/evidence`, { method: "POST" });
+}
+
+export function startEvidenceGathering(
+  collectionId: string,
+  cropIds?: string[],
+): Promise<EvaluationJob> {
+  return request(
+    `/api/collections/${collectionId}/evidence/start`,
+    jsonInit("POST", { crop_ids: cropIds ?? [] }),
+  );
+}
+
 export function getSettings(): Promise<AppSettings> {
   return request("/api/settings");
 }
@@ -131,6 +145,8 @@ export function updateSettings(update: {
   openai_api_key?: string;
   openai_vision_model: string;
   openai_vision_detail: string;
+  ebay_app_id?: string;
+  ebay_cert_id?: string;
 }): Promise<AppSettings> {
   return request("/api/settings", jsonInit("POST", update));
 }

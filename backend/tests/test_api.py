@@ -281,3 +281,146 @@ def test_redetect_removes_orphaned_manual_crop_files(tmp_path: Path, monkeypatch
     assert redetect.status_code == 200
     assert redetect.json()["collection"]["stamp_count"] == 1
     assert list((tmp_path / "data" / "collections").glob("**/crops/*_manual.jpg")) == []
+
+
+def test_evidence_endpoints_gather_and_report_gaps(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+    monkeypatch.delenv("PHILALENS_EBAY_APP_ID", raising=False)
+    monkeypatch.delenv("PHILALENS_EBAY_CERT_ID", raising=False)
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    from philalens.sources import EvidenceItem, EvidenceQuery
+
+    class FakeAdapter:
+        source_name = "fake_reference"
+
+        def __init__(self) -> None:
+            self.queries: list[EvidenceQuery] = []
+
+        def fetch_evidence(self, query: EvidenceQuery) -> list[EvidenceItem]:
+            self.queries.append(query)
+            return [
+                EvidenceItem(
+                    source_name=self.source_name,
+                    source_type="open_reference",
+                    evidence_tier="reference_metadata",
+                    confidence=0.3,
+                    source_url="https://example.org/ref/1",
+                )
+            ]
+
+    fake_adapter = FakeAdapter()
+    monkeypatch.setattr(
+        philalens.api, "build_source_adapters_from_settings", lambda settings: [fake_adapter]
+    )
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+
+    client = TestClient(philalens.api.app)
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    assert upload.status_code == 200
+    collection_id = upload.json()["collection"]["collection_id"]
+    crop_id = upload.json()["pages"][0]["stamps"][0]["crop_id"]
+
+    # Evidence needs a completed Tier 1 run to attach to.
+    no_run = client.post(f"/api/crops/{crop_id}/evidence")
+    assert no_run.status_code == 400
+    assert "Tier 1" in no_run.json()["detail"]
+
+    assert client.post(f"/api/collections/{collection_id}/evaluate").status_code == 200
+
+    # The skeleton run has no identity candidates: the crop gets an explicit
+    # gap instead of a fabricated search.
+    single = client.post(f"/api/crops/{crop_id}/evidence")
+    assert single.status_code == 200
+    stamp = single.json()["pages"][0]["stamps"][0]
+    assert fake_adapter.queries == []
+    assert stamp["valuation"]["estimated_value_low"] is None
+    assert any(
+        item.startswith("No value range:") for item in stamp["valuation"]["assumptions"]
+    )
+
+    # Seed an identity candidate so the adapter is actually queried.
+    run_id = single.json()["latest_evaluation_run_id"]
+    from philalens.models import CatalogCandidateRecord
+
+    philalens.api.store.add_catalog_candidate(
+        CatalogCandidateRecord(
+            candidate_id="cand_api_test",
+            run_id=run_id,
+            crop_id=crop_id,
+            source_name="ai_vision_prior",
+            issuer="Spain",
+            title="Velazquez series",
+            year=1959,
+            match_score=0.8,
+            rank=1,
+        )
+    )
+    with_candidate = client.post(f"/api/crops/{crop_id}/evidence")
+    assert with_candidate.status_code == 200
+    stamp = with_candidate.json()["pages"][0]["stamps"][0]
+    assert len(fake_adapter.queries) == 1
+    assert fake_adapter.queries[0].issuer == "Spain"
+    assert len(stamp["evidence"]) == 1
+    assert stamp["evidence"][0]["source_name"] == "fake_reference"
+    assert stamp["evidence"][0]["source_url"] == "https://example.org/ref/1"
+
+    # Batch job over flagged crops: none are in attention buckets here, so it
+    # completes with nothing to do.
+    job = client.post(f"/api/collections/{collection_id}/evidence/start")
+    assert job.status_code == 200
+    job_id = job.json()["job_id"]
+    for _ in range(20):
+        job_payload = client.get(f"/api/evaluation-jobs/{job_id}").json()
+        if job_payload["status"] in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+    assert job_payload["status"] == "completed"
+    assert "No flagged stamps" in job_payload["message"]
+
+    settings_payload = client.get("/api/settings").json()
+    assert settings_payload["market_sources"]["wikidata"] == "available"
+    assert settings_payload["market_sources"]["ebay_browse"] == "not_configured"
+
+
+def test_settings_update_stores_ebay_keys(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+    monkeypatch.delenv("PHILALENS_EBAY_APP_ID", raising=False)
+    monkeypatch.delenv("PHILALENS_EBAY_CERT_ID", raising=False)
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+    monkeypatch.setattr(philalens.api, "PROJECT_ROOT", tmp_path)
+
+    client = TestClient(philalens.api.app)
+    assert client.get("/api/settings").json()["market_sources"]["ebay_browse"] == "not_configured"
+
+    update = client.post(
+        "/api/settings",
+        json={
+            "vision_provider": "none",
+            "openai_vision_model": "gpt-4.1-mini",
+            "openai_vision_detail": "high",
+            "ebay_app_id": "app-123",
+            "ebay_cert_id": "cert-456",
+        },
+    )
+    assert update.status_code == 200
+    assert update.json()["market_sources"]["ebay_browse"] == "configured"
+
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "PHILALENS_EBAY_APP_ID=app-123" in env_text
+    assert "PHILALENS_EBAY_CERT_ID=cert-456" in env_text

@@ -11,6 +11,9 @@ export default function SettingsDialog({ onClose }: Props) {
   const [keySet, setKeySet] = useState(false);
   const [model, setModel] = useState("gpt-4.1-mini");
   const [detail, setDetail] = useState("high");
+  const [ebayAppId, setEbayAppId] = useState("");
+  const [ebayCertId, setEbayCertId] = useState("");
+  const [ebayConfigured, setEbayConfigured] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -22,6 +25,7 @@ export default function SettingsDialog({ onClose }: Props) {
         setKeySet(settings.openai_api_key_set);
         setModel(settings.openai_vision_model);
         setDetail(settings.openai_vision_detail);
+        setEbayConfigured(settings.market_sources?.ebay_browse === "configured");
       } catch (exc) {
         setStatus(String(exc instanceof Error ? exc.message : exc));
       }
@@ -37,9 +41,14 @@ export default function SettingsDialog({ onClose }: Props) {
         ...(apiKey.trim() ? { openai_api_key: apiKey.trim() } : {}),
         openai_vision_model: model,
         openai_vision_detail: detail,
+        ...(ebayAppId.trim() ? { ebay_app_id: ebayAppId.trim() } : {}),
+        ...(ebayCertId.trim() ? { ebay_cert_id: ebayCertId.trim() } : {}),
       });
       setKeySet(settings.openai_api_key_set);
       setApiKey("");
+      setEbayAppId("");
+      setEbayCertId("");
+      setEbayConfigured(settings.market_sources?.ebay_browse === "configured");
       setStatus("Saved. Settings are live immediately.");
     } catch (exc) {
       setStatus(String(exc instanceof Error ? exc.message : exc));
@@ -82,6 +91,35 @@ export default function SettingsDialog({ onClose }: Props) {
             <option value="auto">auto</option>
             <option value="high">high (best)</option>
           </select>
+        </div>
+        <h2 style={{ marginTop: 18 }}>Market evidence sources</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Wikidata reference lookup is always on (no key). eBay Browse activates once App ID and
+          Cert ID are set — keys are stored in the local .env only.
+        </p>
+        <div className="field">
+          <label>
+            eBay App ID {ebayConfigured ? "(configured — leave blank to keep)" : "(not set)"}
+          </label>
+          <input
+            type="password"
+            value={ebayAppId}
+            placeholder={ebayConfigured ? "••••••••" : "App ID (Client ID)"}
+            onChange={(event) => setEbayAppId(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label>
+            eBay Cert ID {ebayConfigured ? "(configured — leave blank to keep)" : "(not set)"}
+          </label>
+          <input
+            type="password"
+            value={ebayCertId}
+            placeholder={ebayConfigured ? "••••••••" : "Cert ID (Client Secret)"}
+            onChange={(event) => setEbayCertId(event.target.value)}
+            autoComplete="off"
+          />
         </div>
         {status && <p className="muted">{status}</p>}
         <div className="actions">

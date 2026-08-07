@@ -205,6 +205,23 @@ export default function App() {
     [exp, startJobPolling, reportError],
   );
 
+  const handleGatherEvidence = useCallback(
+    (cropId: string) => {
+      void mutate(() => api.gatherCropEvidence(cropId));
+    },
+    [mutate],
+  );
+
+  const handleGatherEvidenceAll = useCallback(async () => {
+    if (!exp) return;
+    setError(null);
+    try {
+      startJobPolling(await api.startEvidenceGathering(exp.collection.collection_id));
+    } catch (exc) {
+      reportError(exc);
+    }
+  }, [exp, startJobPolling, reportError]);
+
   const handleResumeRun = useCallback(
     async (runId: string) => {
       setError(null);
@@ -305,6 +322,7 @@ export default function App() {
               onResumeRun={(runId) => void handleResumeRun(runId)}
               onOpenBucket={openBucket}
               onOpenStamp={(cropId) => openStamp(cropId)}
+              onGatherEvidenceAll={() => void handleGatherEvidenceAll()}
               onDeleteCollection={() => void handleDeleteCollection()}
             />
           )}
@@ -346,6 +364,7 @@ export default function App() {
               onOpenStamp={openStamp}
               onFixCrop={fixCrop}
               onReanalyze={(cropId) => void handleEvaluate([cropId])}
+              onGatherEvidence={handleGatherEvidence}
               onDeleteCrop={(cropId) => {
                 setDrawerCropId(null);
                 void mutate(() => api.deleteCrop(cropId), true);

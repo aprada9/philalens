@@ -1,6 +1,6 @@
 # Philalens Agent Context
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
 ## Plan V2 (2026-08-06) — read this first
 
@@ -36,9 +36,22 @@ identity candidates (stored as `catalog_candidates` with source
 `ai_vision_prior`, never with a claimed catalog_id) and a prior value bucket
 (`likely_common`/`possibly_interesting`/`investigate`) that drives valuation
 buckets; near-duplicate crops (dHash + color guard in `similarity.py`) share
-one vision call. Calibration against the real OpenAI provider is pending the
-user's API key — see `docs/rebuild-plan-v2.md` Phase 2 notes. Next after
-calibration: Phase 3 (market evidence for flagged outliers).
+one vision call. The first real OpenAI calibration ran 2026-08-06 (46 stamps,
+$0.07, identifications judged good by the user; all 46 bucketed
+`likely_common`).
+
+Phase 3 (Tier 2 market evidence) was implemented 2026-08-07: source adapter
+interface in `sources.py` (Wikidata live with country-level fallback; eBay
+Browse built and tested but inactive until the user's eBay developer keys
+arrive — configured via Settings/.env, never committed), Tier 2 orchestration
+in `market_evidence.py` (enriches the latest completed run, appends one
+updated valuation per crop, range only from >= 2 realized-sale prices with
+identity confidence >= 0.5, explicit "No value range:" reasons otherwise),
+evidence endpoints, and UI (drawer Gather evidence button, Market value
+section, Overview batch button, Settings eBay fields). See
+`docs/rebuild-plan-v2.md` Phase 3 notes for pending acceptance items. Next:
+Phase 4 (shortlist + recapture loop) once flagged stamps exist and evidence
+quality is judged.
 
 ## User Intent
 
@@ -93,6 +106,10 @@ The repository contains:
   disabled unless `PHILALENS_VISION_PROVIDER=openai` is configured
 - OpenAI evaluation cost tracking in `backend/src/philalens/costing.py`
 - local visible-observation value triage in `backend/src/philalens/triage.py`
+- Tier 2 evidence source adapters (Wikidata live, eBay Browse key-gated) in
+  `backend/src/philalens/sources.py`
+- Tier 2 market-evidence orchestration in
+  `backend/src/philalens/market_evidence.py`
 - CSV/JSON export shaping in `backend/src/philalens/exports.py`
 - a local browser visualizer in `backend/src/philalens/visualizer.py`
 - a downloader for the optional Apache-2.0 detector model in
@@ -165,12 +182,15 @@ The current local app can:
 The following are not implemented yet:
 
 - OCR
-- catalog/reference matching
-- market evidence retrieval
-- real valuation logic with price ranges
-- source-backed processing for evaluation runs beyond optional observation
-  triage
+- catalog/reference matching beyond AI priors and keyword-matched Wikidata
+  reference items
+- realized-sale (sold price) evidence sources — the `realized_sale` tier
+  exists but no adapter produces it, so value ranges stay withheld in
+  practice until one does
+- eBay Browse activation (adapter built; waiting on the user's App ID/Cert
+  ID from eBay developer application review)
 - reviewed valuation workflow
+- recapture kit / shortlist loop (Phase 4)
 
 The desired evaluation direction is specified in `docs/project-northstar.md`.
 Evaluation should be modeled as a durable run over curated crops, producing

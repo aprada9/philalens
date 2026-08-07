@@ -18,8 +18,10 @@ from .costing import estimate_openai_vision_run_cost, non_openai_cost_estimate
 from .evaluation import evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
+from .market_evidence import MarketEvidenceError, gather_market_evidence
 from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord, StampCrop
 from .segmentation import detect_stamp_crops, recrop_stamp
+from .sources import build_source_adapters_from_settings, market_source_status
 from .storage import PhilalensStore, new_id
 from .vision import VisionObservationError, build_vision_adapter_from_settings
 
@@ -53,6 +55,8 @@ class AppSettingsUpdate(BaseModel):
     openai_api_key: str | None = Field(default=None)
     openai_vision_model: str = Field(default="gpt-4.1-mini")
     openai_vision_detail: str = Field(default="high")
+    ebay_app_id: str | None = Field(default=None)
+    ebay_cert_id: str | None = Field(default=None)
 
 
 _startup_settings = get_settings()
@@ -288,6 +292,67 @@ def resume_evaluation_run(run_id: str) -> dict[str, object]:
     return _get_evaluation_job_or_404(job_id)
 
 
+@app.post("/api/crops/{crop_id}/evidence")
+def gather_crop_evidence(crop_id: str) -> dict[str, object]:
+    crop = store.get_crop(crop_id)
+    if crop is None:
+        raise HTTPException(status_code=404, detail="Crop not found.")
+    page = store.get_page(crop.page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Page not found.")
+
+    adapters = build_source_adapters_from_settings(get_settings())
+    try:
+        run = gather_market_evidence(
+            store, page.collection_id, adapters, crop_ids=[crop.crop_id]
+        )
+    except MarketEvidenceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    export = build_collection_export(store, page.collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after evidence.")
+    return export
+
+
+@app.post("/api/collections/{collection_id}/evidence/start")
+def start_evidence_job(
+    collection_id: str, selection: CropSelection | None = None
+) -> dict[str, object]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    crop_ids = selection.crop_ids if selection and selection.crop_ids else None
+    job_id = new_id("evidjob")
+    _set_evaluation_job(
+        job_id,
+        {
+            "job_id": job_id,
+            "collection_id": collection_id,
+            "job_type": "market_evidence",
+            "status": "queued",
+            "current": 0,
+            "total": 0,
+            "current_crop_id": None,
+            "current_crop_label": None,
+            "current_crop_image_url": None,
+            "message": "Queued evidence gathering",
+            "error": None,
+            "cost_estimate": None,
+            "cost_actual": None,
+        },
+    )
+    thread = Thread(
+        target=_run_evidence_job,
+        args=(job_id, collection_id, crop_ids),
+        daemon=True,
+    )
+    thread.start()
+    return _get_evaluation_job_or_404(job_id)
+
+
 @app.post("/api/collections/{collection_id}/evaluation-cost-estimate")
 def estimate_collection_evaluation_cost(
     collection_id: str, selection: CropSelection | None = None
@@ -306,6 +371,7 @@ def get_app_settings() -> dict[str, object]:
         "openai_api_key_set": bool(settings.openai_api_key),
         "openai_vision_model": settings.openai_vision_model,
         "openai_vision_detail": settings.openai_vision_detail,
+        "market_sources": market_source_status(settings),
     }
 
 
@@ -322,6 +388,10 @@ def update_app_settings(update: AppSettingsUpdate) -> dict[str, object]:
     }
     if update.openai_api_key is not None and update.openai_api_key.strip():
         values["OPENAI_API_KEY"] = update.openai_api_key.strip()
+    if update.ebay_app_id is not None and update.ebay_app_id.strip():
+        values["PHILALENS_EBAY_APP_ID"] = update.ebay_app_id.strip()
+    if update.ebay_cert_id is not None and update.ebay_cert_id.strip():
+        values["PHILALENS_EBAY_CERT_ID"] = update.ebay_cert_id.strip()
 
     _write_env_values(PROJECT_ROOT / ".env", values)
     for key, value in values.items():
@@ -743,6 +813,66 @@ def _run_evaluation_job(
             status="failed",
             message="Evaluation failed",
             error=str(exc),
+        )
+
+
+def _run_evidence_job(
+    job_id: str,
+    collection_id: str,
+    crop_ids: list[str] | None,
+) -> None:
+    _update_evaluation_job(job_id, status="running", message="Gathering market evidence")
+    try:
+        adapters = build_source_adapters_from_settings(get_settings())
+
+        def report_progress(current: int, total: int, crop) -> None:
+            _update_evaluation_job(
+                job_id,
+                status="running",
+                current=current,
+                total=total,
+                current_crop_id=crop.crop_id,
+                current_crop_label=f"Stamp {crop.crop_index}",
+                current_crop_image_url=f"/media/crops/{crop.crop_id}",
+                message=f"Gathering evidence for Stamp {crop.crop_index}",
+            )
+
+        run = gather_market_evidence(
+            store,
+            collection_id,
+            adapters,
+            crop_ids=crop_ids,
+            progress_callback=report_progress,
+        )
+        if run is None:
+            _update_evaluation_job(
+                job_id,
+                status="failed",
+                message="Collection not found",
+                error="Collection not found.",
+            )
+            return
+        evidence_settings = run.settings.get("market_evidence")
+        processed = 0
+        record_count = 0
+        if isinstance(evidence_settings, dict):
+            processed = int(evidence_settings.get("crops_processed") or 0)
+            record_count = int(evidence_settings.get("evidence_record_count") or 0)
+        _update_evaluation_job(
+            job_id,
+            status="completed",
+            current=processed,
+            total=processed,
+            message=(
+                f"Evidence gathered for {processed} stamps ({record_count} records)"
+                if processed
+                else "No flagged stamps needed market evidence"
+            ),
+            run_id=run.run_id,
+        )
+    except Exception as exc:
+        _update_evaluation_job(
+            job_id, status="failed", message="Evidence gathering failed", error=str(exc)
         )
 
 
