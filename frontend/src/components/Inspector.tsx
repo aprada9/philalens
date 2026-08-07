@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { bucketMeta } from "../buckets";
 import type { BBox, Page, Stamp } from "../types";
-import { bucketLabel } from "./StampList";
 
 interface Props {
   page: Page;
@@ -406,7 +406,7 @@ export default function Inspector({
           <>
             <dl className="kv">
               <dt>Bucket</dt>
-              <dd>{valuation.value_bucket ? bucketLabel(valuation.value_bucket) : "—"}</dd>
+              <dd>{valuation.value_bucket ? bucketMeta(valuation.value_bucket).label : "—"}</dd>
               <dt>Range</dt>
               <dd>
                 {valuation.estimated_value_low === null &&

@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 
 def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    # Stay hermetic even when the developer's .env configures a provider.
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     import philalens.config
 

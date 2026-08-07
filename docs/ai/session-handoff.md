@@ -1,8 +1,40 @@
 # Session Handoff
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
-## Latest Session (2026-08-06, part 4): Phase 2 Implemented — Tier 1 Identification
+## Latest Session (2026-08-07): UI Redesign — Workflow-First, Light+Dark
+
+The user ran the first real OpenAI calibration (46 stamps, $0.07,
+identifications judged good) and approved a full UI/UX redesign from an
+interactive mockup. Implemented:
+
+- Three workflow views replacing the single mega-screen: **Overview** (stat
+  tiles, dynamic next-step card, clickable value-triage bar, attention shelf,
+  country breakdown from AI candidates, exports), **Curate** (page cards with
+  progress, page canvas, keyboard-first review queue: K keep / F fix /
+  D delete / arrow skip, hands off to the crop-editor inspector with
+  back-to-queue), **Stamps** (card gallery with search, bucket filter chips,
+  attention-first sort, detail drawer with identity headline, bucket
+  rationale, confidence bar, unverified-AI note, Escape to close).
+- Light + dark themes via CSS variables and `data-theme` on the root;
+  toggle in the top bar persisted to localStorage, default follows the OS.
+  Bucket colors are semantic and CVD-validated per theme
+  (common/interesting/investigate/fixcrop/none). Human-readable bucket
+  labels ("Common", "Fix crop") via `frontend/src/buckets.ts`.
+- Evaluation job progress lives in a top-bar pill (non-blocking);
+  Evaluate-all shows a cost-estimate confirm dialog before spending.
+- Removed `StampList.tsx`/`EvaluationPanel.tsx`; multi-select batch actions
+  were replaced by the review queue (single-crop actions remain in the
+  drawer/inspector).
+
+All 44 backend tests pass; frontend typechecks. Browser-verified in both
+themes against the live calibration collection, including a real keyboard
+queue deletion of a false-positive crop.
+
+Next: the user curates the remaining ~61 flagged crops (queue) and re-runs
+evaluation on the fixed crops; then Phase 3 (market evidence adapters).
+
+## Earlier Session (2026-08-06, part 4): Phase 2 Implemented — Tier 1 Identification
 
 All 44 backend tests pass. Implemented per `docs/rebuild-plan-v2.md` Phase 2
 notes: `stamp-observation-v2` (identity candidates + prior value bucket),
