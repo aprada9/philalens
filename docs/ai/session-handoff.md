@@ -34,6 +34,16 @@ queue deletion of a false-positive crop.
 Next: the user curates the remaining ~61 flagged crops (queue) and re-runs
 evaluation on the fixed crops; then Phase 3 (market evidence adapters).
 
+Status updates from the user (2026-08-07, end of session):
+
+- Calibration verdict: the user judged the Tier 1 identifications good. No
+  prompt iteration needed before Phase 3.
+- eBay: the user registered an eBay Developer account; the application is
+  under review (~1 day). Phase 3 should build the marketplace adapter
+  interface plus the open sources (Wikidata/Commons first) and leave the
+  eBay Browse adapter ready to activate once the App ID/key arrives —
+  configured via settings/env, never committed to the repo.
+
 ## Earlier Session (2026-08-06, part 4): Phase 2 Implemented — Tier 1 Identification
 
 All 44 backend tests pass. Implemented per `docs/rebuild-plan-v2.md` Phase 2
