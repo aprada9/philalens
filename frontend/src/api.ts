@@ -5,7 +5,6 @@ import type {
   CollectionInfo,
   CostEstimate,
   EvaluationJob,
-  Stamp,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -58,11 +57,23 @@ export function deleteCollection(collectionId: string): Promise<{ deleted: strin
   return request(`/api/collections/${collectionId}`, { method: "DELETE" });
 }
 
+export interface CropRecord {
+  crop_id: string;
+  page_id: string;
+  crop_index: number;
+  bbox_xywh: BBox;
+  crop_path: string;
+  segmentation_confidence: number;
+  rotation_degrees: number;
+  review_state: string;
+  warnings: string[];
+}
+
 export function updateCrop(
   cropId: string,
   bbox: BBox,
   rotationDegrees?: number,
-): Promise<{ crop: Stamp }> {
+): Promise<{ crop: CropRecord }> {
   return request(
     `/api/crops/${cropId}`,
     jsonInit("PATCH", {
@@ -72,15 +83,15 @@ export function updateCrop(
   );
 }
 
-export function deleteCrop(cropId: string): Promise<CollectionExport> {
+export function deleteCrop(cropId: string): Promise<{ deleted_crop_id: string }> {
   return request(`/api/crops/${cropId}`, { method: "DELETE" });
 }
 
-export function deleteCrops(cropIds: string[]): Promise<CollectionExport> {
+export function deleteCrops(cropIds: string[]): Promise<{ deleted_crop_ids: string[] }> {
   return request("/api/crops/delete", jsonInit("POST", { crop_ids: cropIds }));
 }
 
-export function markCropsReady(cropIds: string[]): Promise<CollectionExport> {
+export function markCropsReady(cropIds: string[]): Promise<{ ready_crop_ids: string[] }> {
   return request("/api/crops/mark-ready", jsonInit("POST", { crop_ids: cropIds }));
 }
 

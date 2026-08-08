@@ -22,30 +22,34 @@ def build_collection_export(store: PhilalensStore, collection_id: str) -> dict[s
     latest_evaluation_summary = (
         build_evaluation_summary(store, latest_run.run_id) if latest_run else None
     )
+
+    # Load the latest run's records once and group them by crop: per-crop
+    # queries made the export O(crops x 4) database roundtrips, which is far
+    # too slow for a full-collection album (thousands of crops).
+    observation_by_crop: dict[str, Any] = {}
+    candidates_by_crop: dict[str, list[Any]] = {}
+    evidence_by_crop: dict[str, list[Any]] = {}
+    valuation_by_crop: dict[str, Any] = {}
+    if latest_run:
+        # Run-level lists are ordered ascending, so the last record per crop
+        # is the newest — matching the per-crop lookups this replaces.
+        for observation_record in store.list_stamp_observations_for_run(latest_run.run_id):
+            observation_by_crop[observation_record.crop_id] = observation_record
+        for candidate_record in store.list_catalog_candidates_for_run(latest_run.run_id):
+            candidates_by_crop.setdefault(candidate_record.crop_id, []).append(candidate_record)
+        for evidence_record in store.list_source_evidence_for_run(latest_run.run_id):
+            evidence_by_crop.setdefault(evidence_record.crop_id, []).append(evidence_record)
+        for valuation_record in store.list_stamp_valuations_for_run(latest_run.run_id):
+            valuation_by_crop[valuation_record.crop_id] = valuation_record
+
     pages_payload: list[dict[str, object]] = []
     for page in store.list_pages(collection_id):
         crops_payload = []
         for crop in store.list_crops_for_page(page.page_id):
-            observation = (
-                store.get_stamp_observation_for_crop(latest_run.run_id, crop.crop_id)
-                if latest_run
-                else None
-            )
-            candidates = (
-                store.list_catalog_candidates_for_crop(latest_run.run_id, crop.crop_id)
-                if latest_run
-                else []
-            )
-            evidence = (
-                store.list_source_evidence_for_crop(latest_run.run_id, crop.crop_id)
-                if latest_run
-                else []
-            )
-            valuation = (
-                store.get_stamp_valuation_for_crop(latest_run.run_id, crop.crop_id)
-                if latest_run
-                else None
-            )
+            observation = observation_by_crop.get(crop.crop_id)
+            candidates = candidates_by_crop.get(crop.crop_id, [])
+            evidence = evidence_by_crop.get(crop.crop_id, [])
+            valuation = valuation_by_crop.get(crop.crop_id)
 
             observation_payload: dict[str, object]
             if observation is None:

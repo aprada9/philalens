@@ -2,7 +2,33 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 6): Review-Bar Relaxation + Bulk Page Accept
+## Latest Session (2026-08-08, part 7): Queue Actions Made Fast at 8k Crops
+
+The user reported multi-second Keep/Fix/Delete actions in the review queue.
+Cause: every crop action returned the full collection export, and
+`build_collection_export` ran 4 per-crop queries (each opening its own
+SQLite connection) — ~32k queries plus a 6.3 MB JSON response per
+keystroke at 7,956 crops. Fixes, measured against the live collection:
+
+- `build_collection_export` now loads the latest run's observations,
+  candidates, evidence, and valuations with 4 run-level queries grouped by
+  crop (ordering semantics preserved: last-per-crop = newest). Full export:
+  4.96 s → 0.19 s.
+- Hot endpoints return light payloads instead of the export:
+  DELETE /api/crops/{id} → {deleted_crop_id}, POST /api/crops/delete →
+  {deleted_crop_ids}, POST /api/crops/mark-ready → {ready_crop_ids}
+  (mark-ready measured at 19 ms). PATCH /api/crops/{id} already returned
+  just the crop.
+- The frontend mirrors these actions locally (`applyLocalPages` recomputes
+  stamp/review counts client-side) instead of refetching; Fix box merges
+  the PATCH response into the stamp and bumps the image version. Full
+  refetches remain only where they're rare (upload, evaluate completion,
+  redetect, page/collection deletion).
+- Note: crop_aea8fa7fc7fb4e4f was mark-ready'd by a latency test and
+  re-flagged afterwards; its warning chips were lost (state predates the
+  only backup) but it is back in the review queue.
+
+## Earlier Session (2026-08-08, part 6): Review-Bar Relaxation + Bulk Page Accept
 
 The user uploaded all 241 pages: 7,956 crops, 3,733 flagged for review
 (47%). Analysis of the flags showed the rule (`warnings OR confidence <

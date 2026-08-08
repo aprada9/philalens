@@ -5,7 +5,7 @@ import TopBar, { type ViewName } from "./components/TopBar";
 import CurateView from "./views/CurateView";
 import OverviewView from "./views/OverviewView";
 import StampsView from "./views/StampsView";
-import type { BBox, CollectionExport, CollectionInfo, EvaluationJob } from "./types";
+import type { BBox, CollectionExport, CollectionInfo, EvaluationJob, Page } from "./types";
 
 function initialTheme(): "light" | "dark" {
   const saved = localStorage.getItem("philalens-theme");
@@ -88,6 +88,77 @@ export default function App() {
     })();
   }, [applyExport, reportError]);
 
+  // Local page-state update for hot review-queue actions: the server
+  // confirms the change with a light response and the client mirrors it,
+  // instead of refetching the multi-megabyte collection export per action.
+  const applyLocalPages = useCallback((updatePages: (pages: Page[]) => Page[]) => {
+    setExp((prev) => {
+      if (!prev) return prev;
+      const pages = updatePages(prev.pages);
+      const stamps = pages.flatMap((page) => page.stamps);
+      return {
+        ...prev,
+        pages,
+        collection: {
+          ...prev.collection,
+          stamp_count: stamps.length,
+          needs_crop_review_count: stamps.filter(
+            (stamp) => stamp.review_state === "needs_crop_review",
+          ).length,
+        },
+      };
+    });
+  }, []);
+
+  const handleMarkReady = useCallback(
+    async (cropIds: string[]) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await api.markCropsReady(cropIds);
+        const ids = new Set(cropIds);
+        applyLocalPages((pages) =>
+          pages.map((page) => ({
+            ...page,
+            stamps: page.stamps.map((stamp) =>
+              ids.has(stamp.crop_id)
+                ? { ...stamp, review_state: "unreviewed", warnings: [] }
+                : stamp,
+            ),
+          })),
+        );
+      } catch (exc) {
+        reportError(exc);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyLocalPages, reportError],
+  );
+
+  const handleDeleteCrop = useCallback(
+    async (cropId: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await api.deleteCrop(cropId);
+        setDrawerCropId((current) => (current === cropId ? null : current));
+        setSelectedCropId((current) => (current === cropId ? null : current));
+        applyLocalPages((pages) =>
+          pages.map((page) => ({
+            ...page,
+            stamps: page.stamps.filter((stamp) => stamp.crop_id !== cropId),
+          })),
+        );
+      } catch (exc) {
+        reportError(exc);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyLocalPages, reportError],
+  );
+
   const mutate = useCallback(
     async (action: () => Promise<CollectionExport>, bumpImages = false) => {
       setBusy(true);
@@ -166,19 +237,35 @@ export default function App() {
 
   const handleCropCommit = useCallback(
     async (cropId: string, bbox: BBox, rotationDegrees: number) => {
-      if (!exp) return;
       setBusy(true);
       setError(null);
       try {
-        await api.updateCrop(cropId, bbox, rotationDegrees);
-        applyExport(await api.getCollection(exp.collection.collection_id), true);
+        const { crop } = await api.updateCrop(cropId, bbox, rotationDegrees);
+        applyLocalPages((pages) =>
+          pages.map((page) => ({
+            ...page,
+            stamps: page.stamps.map((stamp) =>
+              stamp.crop_id === cropId
+                ? {
+                    ...stamp,
+                    bbox_xywh: crop.bbox_xywh,
+                    rotation_degrees: crop.rotation_degrees,
+                    segmentation_confidence: crop.segmentation_confidence,
+                    review_state: crop.review_state,
+                    warnings: crop.warnings,
+                  }
+                : stamp,
+            ),
+          })),
+        );
+        setImageVersion((version) => version + 1);
       } catch (exc) {
         reportError(exc);
       } finally {
         setBusy(false);
       }
     },
-    [exp, applyExport, reportError],
+    [applyLocalPages, reportError],
   );
 
   const handleDeleteCollection = useCallback(async () => {
@@ -427,9 +514,9 @@ export default function App() {
               onCropCommit={(cropId, bbox, rotation) =>
                 void handleCropCommit(cropId, bbox, rotation)
               }
-              onDeleteCrop={(cropId) => void mutate(() => api.deleteCrop(cropId), true)}
-              onMarkReady={(cropId) => void mutate(() => api.markCropsReady([cropId]))}
-              onMarkReadyMany={(cropIds) => void mutate(() => api.markCropsReady(cropIds))}
+              onDeleteCrop={(cropId) => void handleDeleteCrop(cropId)}
+              onMarkReady={(cropId) => void handleMarkReady([cropId])}
+              onMarkReadyMany={(cropIds) => void handleMarkReady(cropIds)}
               onEvaluateCrop={(cropId) => void handleEvaluate([cropId])}
             />
           )}
@@ -445,10 +532,7 @@ export default function App() {
               onFixCrop={fixCrop}
               onReanalyze={(cropId) => void handleEvaluate([cropId])}
               onGatherEvidence={handleGatherEvidence}
-              onDeleteCrop={(cropId) => {
-                setDrawerCropId(null);
-                void mutate(() => api.deleteCrop(cropId), true);
-              }}
+              onDeleteCrop={(cropId) => void handleDeleteCrop(cropId)}
             />
           )}
         </main>

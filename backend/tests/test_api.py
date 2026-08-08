@@ -162,20 +162,20 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     )
 
     assert mark_ready_response.status_code == 200
-    mark_ready_payload = mark_ready_response.json()
-    marked_crop = next(
-        stamp for stamp in mark_ready_payload["pages"][0]["stamps"] if stamp["crop_id"] == crop_id
-    )
+    # Hot review-queue endpoints return light payloads; the client updates
+    # its state locally instead of refetching the full export.
+    assert mark_ready_response.json() == {"ready_crop_ids": [crop_id]}
+    marked_crop_state = client.get(
+        f"/api/collections/{payload['collection']['collection_id']}"
+    ).json()["pages"][0]["stamps"]
+    marked_crop = next(stamp for stamp in marked_crop_state if stamp["crop_id"] == crop_id)
     assert marked_crop["review_state"] == "unreviewed"
     assert marked_crop["warnings"] == []
 
     delete_crop_response = client.delete(f"/api/crops/{crop_id}")
 
     assert delete_crop_response.status_code == 200
-    delete_crop_payload = delete_crop_response.json()
-    assert delete_crop_payload["collection"]["page_count"] == 1
-    assert delete_crop_payload["collection"]["stamp_count"] == 1
-    assert len(delete_crop_payload["pages"][0]["stamps"]) == 1
+    assert delete_crop_response.json() == {"deleted_crop_id": crop_id}
 
     delete_selected_response = client.post(
         "/api/crops/delete",
@@ -183,9 +183,12 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
     )
 
     assert delete_selected_response.status_code == 200
-    delete_selected_payload = delete_selected_response.json()
-    assert delete_selected_payload["collection"]["stamp_count"] == 0
-    assert delete_selected_payload["pages"][0]["stamps"] == []
+    assert delete_selected_response.json() == {"deleted_crop_ids": [manual_crop_id]}
+    after_deletes = client.get(
+        f"/api/collections/{payload['collection']['collection_id']}"
+    ).json()
+    assert after_deletes["collection"]["stamp_count"] == 0
+    assert after_deletes["pages"][0]["stamps"] == []
 
     settings_response = client.get("/api/settings")
 

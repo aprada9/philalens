@@ -579,10 +579,10 @@ def delete_crop(crop_id: str) -> dict[str, object]:
     store.delete_crop(crop.crop_id)
     Path(crop.crop_path).unlink(missing_ok=True)
 
-    export = build_collection_export(store, page.collection_id)
-    if export is None:
-        raise HTTPException(status_code=500, detail="Collection was not found after crop deletion.")
-    return export
+    # Deliberately light response: the full collection export is far too
+    # expensive to rebuild per keystroke in the review queue. The client
+    # updates its state locally.
+    return {"deleted_crop_id": crop.crop_id}
 
 
 @app.post("/api/crops/delete")
@@ -604,16 +604,12 @@ def delete_crops(selection: CropSelection) -> dict[str, object]:
     collection_ids = {page.collection_id for page in pages if page is not None}
     if len(collection_ids) != 1:
         raise HTTPException(status_code=400, detail="Selected crops must belong to one collection.")
-    collection_id = next(iter(collection_ids))
 
     for crop in crops:
         store.delete_crop(crop.crop_id)
         Path(crop.crop_path).unlink(missing_ok=True)
 
-    export = build_collection_export(store, collection_id)
-    if export is None:
-        raise HTTPException(status_code=500, detail="Collection was not found after crop deletion.")
-    return export
+    return {"deleted_crop_ids": [crop.crop_id for crop in crops]}
 
 
 @app.post("/api/crops/mark-ready")
@@ -635,15 +631,11 @@ def mark_crops_ready(selection: CropSelection) -> dict[str, object]:
     collection_ids = {page.collection_id for page in pages if page is not None}
     if len(collection_ids) != 1:
         raise HTTPException(status_code=400, detail="Selected crops must belong to one collection.")
-    collection_id = next(iter(collection_ids))
 
     for crop in crops:
         store.update_crop(replace(crop, review_state=REVIEW_UNREVIEWED, warnings=[]))
 
-    export = build_collection_export(store, collection_id)
-    if export is None:
-        raise HTTPException(status_code=500, detail="Collection was not found after crop update.")
-    return export
+    return {"ready_crop_ids": [crop.crop_id for crop in crops]}
 
 
 @app.post("/api/pages/{page_id}/crops")
