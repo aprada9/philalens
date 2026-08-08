@@ -132,6 +132,9 @@ export interface CollectionExport {
   latest_evaluation_run_id: string | null;
   latest_evaluation_summary: EvaluationSummary | null;
   pages: Page[];
+  /* present only on add-pages responses */
+  added_page_count?: number;
+  skipped_duplicate_filenames?: string[];
 }
 
 export interface EvaluationJob {

@@ -94,7 +94,12 @@ export default function TopBar({
           </option>
         ))}
       </select>
-      <button className="btn" onClick={onUploadClick} disabled={busy}>
+      <button
+        className="btn"
+        onClick={onUploadClick}
+        disabled={busy}
+        title="Adds pages to the current collection — files already uploaded (same filename) are skipped automatically"
+      >
         Upload pages
       </button>
       {exp && (

@@ -105,8 +105,7 @@ def list_collections() -> list[dict[str, object]]:
     return [asdict(collection) for collection in store.list_collections()]
 
 
-@app.post("/api/collections")
-async def create_collection(files: list[UploadFile] = File(...)) -> dict[str, object]:
+def _validate_upload_batch(files: list[UploadFile]) -> None:
     settings = get_settings()
     if not files:
         raise HTTPException(status_code=400, detail="Upload at least one image.")
@@ -115,65 +114,117 @@ async def create_collection(files: list[UploadFile] = File(...)) -> dict[str, ob
             status_code=400,
             detail=f"Upload at most {settings.max_upload_files} images per batch.",
         )
-
     for index, upload in enumerate(files, start=1):
         filename = safe_filename(upload.filename, f"page-{index}.jpg")
         if not supported_image_extension(filename):
             raise HTTPException(status_code=400, detail=f"Unsupported image format: {filename}")
 
+
+async def _ingest_page(
+    collection_id: str,
+    upload: UploadFile,
+    original_filename: str,
+    page_order: int,
+) -> None:
+    settings = get_settings()
+    page_id = new_id("page")
+    page_dir = settings.collections_dir / collection_id / page_id
+    original_path = page_dir / original_filename
+    normalized_path = page_dir / "normalized.jpg"
+    crops_dir = page_dir / "crops"
+
+    await _persist_upload(upload, original_path)
+
+    try:
+        normalized = normalize_image(original_path, normalized_path)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    segmentation = detect_stamp_crops(
+        page_id=page_id,
+        normalized_image_path=normalized.normalized_path,
+        crop_dir=crops_dir,
+        detector=settings.stamp_detector,
+        yolo_model_path=settings.stamp_yolo_model_path,
+        yolo_confidence=settings.stamp_yolo_confidence,
+        margin_percent=settings.stamp_crop_margin_percent,
+    )
+    notes = [
+        f"Automatic crop detection completed with {segmentation.detector}.",
+        "Catalog matching, descriptions, and valuation are not enabled yet.",
+    ]
+    notes.extend(segmentation.warnings)
+
+    page = PageImageRecord(
+        page_id=page_id,
+        collection_id=collection_id,
+        page_order=page_order,
+        original_filename=original_filename,
+        original_path=str(normalized.original_path),
+        normalized_path=str(normalized.normalized_path),
+        image_format=normalized.image_format,
+        width=normalized.width,
+        height=normalized.height,
+        quality_warnings=normalized.warnings,
+        notes=notes,
+    )
+    store.add_page(page)
+    store.replace_page_crops(page_id, segmentation.crops)
+
+
+@app.post("/api/collections")
+async def create_collection(files: list[UploadFile] = File(...)) -> dict[str, object]:
+    _validate_upload_batch(files)
     collection = store.create_collection(title=f"{len(files)} page batch")
-    collection_dir = settings.collections_dir / collection.collection_id
 
     for index, upload in enumerate(files, start=1):
-        page_id = new_id("page")
-        page_dir = collection_dir / page_id
         original_filename = safe_filename(upload.filename, f"page-{index}.jpg")
-        original_path = page_dir / original_filename
-        normalized_path = page_dir / "normalized.jpg"
-        crops_dir = page_dir / "crops"
-
-        await _persist_upload(upload, original_path)
-
-        try:
-            normalized = normalize_image(original_path, normalized_path)
-        except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        segmentation = detect_stamp_crops(
-            page_id=page_id,
-            normalized_image_path=normalized.normalized_path,
-            crop_dir=crops_dir,
-            detector=settings.stamp_detector,
-            yolo_model_path=settings.stamp_yolo_model_path,
-            yolo_confidence=settings.stamp_yolo_confidence,
-            margin_percent=settings.stamp_crop_margin_percent,
-        )
-        notes = [
-            f"Automatic crop detection completed with {segmentation.detector}.",
-            "Catalog matching, descriptions, and valuation are not enabled yet.",
-        ]
-        notes.extend(segmentation.warnings)
-
-        page = PageImageRecord(
-            page_id=page_id,
-            collection_id=collection.collection_id,
-            page_order=index,
-            original_filename=original_filename,
-            original_path=str(normalized.original_path),
-            normalized_path=str(normalized.normalized_path),
-            image_format=normalized.image_format,
-            width=normalized.width,
-            height=normalized.height,
-            quality_warnings=normalized.warnings,
-            notes=notes,
-        )
-        store.add_page(page)
-        store.replace_page_crops(page_id, segmentation.crops)
+        await _ingest_page(collection.collection_id, upload, original_filename, index)
 
     export = build_collection_export(store, collection.collection_id)
     if export is None:
         raise HTTPException(status_code=500, detail="Collection was not saved.")
     return export
+
+
+@app.post("/api/collections/{collection_id}/pages")
+async def add_pages_to_collection(
+    collection_id: str, files: list[UploadFile] = File(...)
+) -> dict[str, object]:
+    """Add pages to an existing collection, skipping already-uploaded filenames.
+
+    The duplicate check is by original filename (case-insensitive), so the
+    user can re-select their whole photo folder without double-importing the
+    pages that are already in the collection.
+    """
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    _validate_upload_batch(files)
+
+    existing_pages = store.list_pages(collection_id)
+    existing_filenames = {page.original_filename.lower() for page in existing_pages}
+    next_order = max((page.page_order for page in existing_pages), default=0) + 1
+
+    skipped: list[str] = []
+    added = 0
+    for index, upload in enumerate(files, start=1):
+        original_filename = safe_filename(upload.filename, f"page-{index}.jpg")
+        if original_filename.lower() in existing_filenames:
+            skipped.append(original_filename)
+            continue
+        await _ingest_page(collection_id, upload, original_filename, next_order)
+        existing_filenames.add(original_filename.lower())
+        next_order += 1
+        added += 1
+
+    export = build_collection_export(store, collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after upload.")
+    return {
+        **export,
+        "added_page_count": added,
+        "skipped_duplicate_filenames": sorted(skipped),
+    }
 
 
 @app.get("/api/collections/{collection_id}")

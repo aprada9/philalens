@@ -1143,3 +1143,25 @@ kbd {
   border-radius: 6px;
   border: 1px solid var(--border);
 }
+
+.notice-bar {
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--panel));
+  padding: 7px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.notice-bar button {
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.year-input {
+  width: 92px;
+}

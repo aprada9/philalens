@@ -2,7 +2,28 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 2): eBay Live + Vision Model Dropdown
+## Latest Session (2026-08-08, part 3): Incremental Upload + Stamps Filters
+
+Preparation for the full ~80-page run:
+
+- `POST /api/collections/{id}/pages` adds pages to an existing collection
+  and skips files whose original filename is already present
+  (case-insensitive), returning `added_page_count` and
+  `skipped_duplicate_filenames`. The Upload pages button now extends the
+  open collection (a notice bar reports added/skipped); it only creates a
+  new collection when none exists. This lets the user re-select their whole
+  photo folder without knowing which 3 pages were already uploaded, and
+  without losing curation/evaluation work.
+- Stamps view gained a country dropdown (distinct AI-identified issuers
+  with counts) and year from/to filters (only stamps with an identified
+  year match); browser-verified against the live 99-stamp collection.
+- The user asked to filter by purchase value in EUR ("value when bought");
+  this was NOT implemented because the data does not exist: a front photo
+  gives only the printed face value in a historic currency (e.g. 1959
+  pesetas), and actual purchase prices are unknown to the system.
+  Explained to the user; denomination remains text-searchable.
+
+## Earlier Session (2026-08-08, part 2): eBay Live + Vision Model Dropdown
 
 - The user's eBay developer application was approved; the marketplace
   account deletion exemption was granted; App ID/Cert ID were entered in

@@ -459,3 +459,60 @@ def test_cancel_evaluation_job_validation(tmp_path: Path, monkeypatch) -> None:
     finished_cancel = client.post(f"/api/evaluation-jobs/{job_id}/cancel")
     assert finished_cancel.status_code == 400
     assert "Only queued or running jobs" in finished_cancel.json()["detail"]
+
+
+def test_add_pages_to_collection_skips_duplicate_filenames(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+    payload_bytes = encoded.tobytes()
+
+    client = TestClient(philalens.api.app)
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page-a.png", payload_bytes, "image/png"))],
+    )
+    assert upload.status_code == 200
+    collection_id = upload.json()["collection"]["collection_id"]
+
+    # Re-uploading the whole folder: the existing page is skipped by filename
+    # (case-insensitive), the new one is ingested and ordered after it.
+    add = client.post(
+        f"/api/collections/{collection_id}/pages",
+        files=[
+            ("files", ("PAGE-A.png", payload_bytes, "image/png")),
+            ("files", ("page-b.png", payload_bytes, "image/png")),
+        ],
+    )
+    assert add.status_code == 200
+    add_payload = add.json()
+    assert add_payload["added_page_count"] == 1
+    assert add_payload["skipped_duplicate_filenames"] == ["PAGE-A.png"]
+    assert add_payload["collection"]["page_count"] == 2
+    filenames = [page["original_filename"] for page in add_payload["pages"]]
+    assert filenames == ["page-a.png", "page-b.png"]
+    orders = [page["page_order"] for page in add_payload["pages"]]
+    assert orders == [1, 2]
+
+    # Nothing new: everything skipped, nothing duplicated.
+    repeat = client.post(
+        f"/api/collections/{collection_id}/pages",
+        files=[("files", ("page-b.png", payload_bytes, "image/png"))],
+    )
+    assert repeat.status_code == 200
+    assert repeat.json()["added_page_count"] == 0
+    assert repeat.json()["collection"]["page_count"] == 2
+
+    missing = client.post(
+        "/api/collections/col_missing/pages",
+        files=[("files", ("page-c.png", payload_bytes, "image/png"))],
+    )
+    assert missing.status_code == 404

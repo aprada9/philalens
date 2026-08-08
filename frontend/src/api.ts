@@ -45,6 +45,15 @@ export function uploadCollection(files: FileList | File[]): Promise<CollectionEx
   return request("/api/collections", { method: "POST", body: form });
 }
 
+export function addPagesToCollection(
+  collectionId: string,
+  files: FileList | File[],
+): Promise<CollectionExport> {
+  const form = new FormData();
+  for (const file of Array.from(files)) form.append("files", file);
+  return request(`/api/collections/${collectionId}/pages`, { method: "POST", body: form });
+}
+
 export function deleteCollection(collectionId: string): Promise<{ deleted: string }> {
   return request(`/api/collections/${collectionId}`, { method: "DELETE" });
 }

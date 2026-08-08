@@ -25,6 +25,7 @@ export default function App() {
   const [drawMode, setDrawMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [job, setJob] = useState<EvaluationJob | null>(null);
   const [imageVersion, setImageVersion] = useState(1);
@@ -106,9 +107,27 @@ export default function App() {
   const handleUpload = useCallback(
     (files: FileList | null) => {
       if (!files || files.length === 0) return;
-      void mutate(() => api.uploadCollection(files), true);
+      setNotice(null);
+      // With a collection open, uploads extend it; pages whose filename is
+      // already in the collection are skipped server-side, so re-selecting
+      // the whole photo folder is safe.
+      if (exp) {
+        void mutate(async () => {
+          const result = await api.addPagesToCollection(exp.collection.collection_id, files);
+          const skipped = result.skipped_duplicate_filenames ?? [];
+          setNotice(
+            `Added ${result.added_page_count ?? 0} pages` +
+              (skipped.length > 0
+                ? `; skipped ${skipped.length} already uploaded (${skipped.slice(0, 5).join(", ")}${skipped.length > 5 ? ", …" : ""})`
+                : ""),
+          );
+          return result;
+        }, true);
+      } else {
+        void mutate(() => api.uploadCollection(files), true);
+      }
     },
-    [mutate],
+    [exp, mutate],
   );
 
   const handleCropCommit = useCallback(
@@ -317,6 +336,12 @@ export default function App() {
         <div className="error-bar">
           <span>{error}</span>
           <button onClick={() => setError(null)}>×</button>
+        </div>
+      )}
+      {notice && (
+        <div className="notice-bar">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)}>×</button>
         </div>
       )}
 

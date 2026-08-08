@@ -48,6 +48,9 @@ export default function StampsView({
 }: Props) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<StampSort>("attention");
+  const [countryFilter, setCountryFilter] = useState("");
+  const [yearMin, setYearMin] = useState("");
+  const [yearMax, setYearMax] = useState("");
 
   const pageByCrop = useMemo(() => {
     const map = new Map<string, number>();
@@ -68,12 +71,31 @@ export default function StampsView({
     return counts;
   }, [stamps]);
 
+  const countries = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const stamp of stamps) {
+      const issuer = topCandidate(stamp)?.issuer;
+      if (issuer) counts.set(issuer, (counts.get(issuer) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [stamps]);
+
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
+    const minYear = yearMin.trim() === "" ? null : Number(yearMin);
+    const maxYear = yearMax.trim() === "" ? null : Number(yearMax);
     let list = stamps.filter((stamp) => {
       if (bucketFilter && stampBucket(stamp) !== bucketFilter) return false;
-      if (!term) return true;
       const candidate = topCandidate(stamp);
+      if (countryFilter && candidate?.issuer !== countryFilter) return false;
+      if (minYear !== null || maxYear !== null) {
+        // Year filters only match stamps with an identified year.
+        const year = candidate?.year ?? null;
+        if (year === null) return false;
+        if (minYear !== null && !Number.isNaN(minYear) && year < minYear) return false;
+        if (maxYear !== null && !Number.isNaN(maxYear) && year > maxYear) return false;
+      }
+      if (!term) return true;
       const haystack = [
         candidate?.issuer,
         candidate?.title,
@@ -106,7 +128,7 @@ export default function StampsView({
       );
     }
     return list;
-  }, [stamps, bucketFilter, query, sort, pageByCrop]);
+  }, [stamps, bucketFilter, query, sort, pageByCrop, countryFilter, yearMin, yearMax]);
 
   const drawerStamp = stamps.find((stamp) => stamp.crop_id === drawerCropId) ?? null;
 
@@ -140,6 +162,34 @@ export default function StampsView({
           </button>
         ))}
         <span className="grow" />
+        <select
+          value={countryFilter}
+          onChange={(event) => setCountryFilter(event.target.value)}
+          title="Filter by AI-identified country (unverified prior)"
+        >
+          <option value="">All countries</option>
+          {countries.map(([name, count]) => (
+            <option key={name} value={name}>
+              {name} ({count})
+            </option>
+          ))}
+        </select>
+        <input
+          className="year-input"
+          type="number"
+          placeholder="Year from"
+          value={yearMin}
+          onChange={(event) => setYearMin(event.target.value)}
+          title="Only stamps with an identified year match"
+        />
+        <input
+          className="year-input"
+          type="number"
+          placeholder="to"
+          value={yearMax}
+          onChange={(event) => setYearMax(event.target.value)}
+          title="Only stamps with an identified year match"
+        />
         <select value={sort} onChange={(event) => setSort(event.target.value as StampSort)}>
           <option value="attention">Sort: Attention first</option>
           <option value="page">Sort: Page order</option>
