@@ -2,7 +2,27 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 5): Chunked Upload for the Real Collection Size
+## Latest Session (2026-08-08, part 6): Review-Bar Relaxation + Bulk Page Accept
+
+The user uploaded all 241 pages: 7,956 crops, 3,733 flagged for review
+(47%). Analysis of the flags showed the rule (`warnings OR confidence <
+0.7`) was flooding the queue: for YOLO detections `segmentation_confidence`
+is the raw YOLO score, which lands at 0.4-0.65 for correct detections, so
+1,383 warning-free crops were flagged on score alone (calibration curation
+kept ~87% of flagged crops unchanged).
+
+- New rule: `warnings OR confidence < REVIEW_CONFIDENCE_BAR (0.45)`
+  (`segmentation.py`); warned crops always stay flagged.
+- `POST /api/collections/{id}/relax-crop-review` applies the current bar to
+  crops flagged under the older stricter rule (no re-detection, curation
+  preserved). Run live: 1,066 crops unflagged, 2,667 remain (all warned or
+  genuinely low-confidence).
+- Curate queue gained "Accept all N remaining on this page" (bulk
+  mark-ready for the current page's flagged crops) — with ~11 flagged
+  crops/page average, per-page acceptance makes the remaining queue
+  tractable.
+
+## Earlier Session (2026-08-08, part 5): Chunked Upload for the Real Collection Size
 
 The user's full collection is 241 pages / ~685 MB (not ~80 pages as earlier
 estimated; docs updated). A single upload request would exceed the 120-file

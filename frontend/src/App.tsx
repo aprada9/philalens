@@ -429,6 +429,7 @@ export default function App() {
               }
               onDeleteCrop={(cropId) => void mutate(() => api.deleteCrop(cropId), true)}
               onMarkReady={(cropId) => void mutate(() => api.markCropsReady([cropId]))}
+              onMarkReadyMany={(cropIds) => void mutate(() => api.markCropsReady(cropIds))}
               onEvaluateCrop={(cropId) => void handleEvaluate([cropId])}
             />
           )}

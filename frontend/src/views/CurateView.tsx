@@ -19,6 +19,7 @@ interface Props {
   onCropCommit: (cropId: string, bbox: BBox, rotation: number) => void;
   onDeleteCrop: (cropId: string) => void;
   onMarkReady: (cropId: string) => void;
+  onMarkReadyMany: (cropIds: string[]) => void;
   onEvaluateCrop: (cropId: string) => void;
 }
 
@@ -38,6 +39,7 @@ export default function CurateView({
   onCropCommit,
   onDeleteCrop,
   onMarkReady,
+  onMarkReadyMany,
   onEvaluateCrop,
 }: Props) {
   const pages = exp.pages;
@@ -56,6 +58,17 @@ export default function CurateView({
   const [queuePos, setQueuePos] = useState(0);
   const position = queue.length === 0 ? 0 : Math.min(queuePos, queue.length - 1);
   const current = queue[position] ?? null;
+
+  // Flagged crops on the page currently under review, for the bulk accept.
+  const currentPageQueueIds = useMemo(
+    () =>
+      current
+        ? queue
+            .filter((item) => item.pageId === current.pageId)
+            .map((item) => item.stamp.crop_id)
+        : [],
+    [queue, current],
+  );
 
   // Keep the canvas on the page of the crop under review.
   useEffect(() => {
@@ -276,6 +289,17 @@ export default function CurateView({
               <div className="kbd-hint">
                 <kbd>K</kbd> keep · <kbd>F</kbd> fix · <kbd>D</kbd> delete · <kbd>→</kbd> skip
               </div>
+              {currentPageQueueIds.length > 1 && (
+                <button
+                  className="btn"
+                  style={{ marginTop: 10 }}
+                  onClick={() => onMarkReadyMany(currentPageQueueIds)}
+                  disabled={busy}
+                  title="Keeps every crop still flagged on this page — check the page canvas first"
+                >
+                  ✓✓ Accept all {currentPageQueueIds.length} remaining on this page
+                </button>
+              )}
             </>
           ) : (
             <>

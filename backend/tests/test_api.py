@@ -532,3 +532,58 @@ def test_backup_endpoint_streams_sqlite_snapshot(tmp_path: Path, monkeypatch) ->
     assert response.content[:16] == b"SQLite format 3\x00"
     assert "philalens-" in response.headers["content-disposition"]
     assert list((tmp_path / "data" / "backups").glob("philalens-*.sqlite"))
+
+
+def test_relax_crop_review_unflags_confident_clean_crops(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+
+    import philalens.api
+    from philalens.models import REVIEW_NEEDS_CROP_REVIEW
+
+    importlib.reload(philalens.api)
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+
+    client = TestClient(philalens.api.app)
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    assert upload.status_code == 200
+    collection_id = upload.json()["collection"]["collection_id"]
+    crop_id = upload.json()["pages"][0]["stamps"][0]["crop_id"]
+
+    # Simulate crops flagged under the old stricter rule: one clean and
+    # confident (relaxable), one with a warning (must stay flagged).
+    from dataclasses import replace as dc_replace
+
+    store = philalens.api.store
+    crop = store.get_crop(crop_id)
+    store.update_crop(
+        dc_replace(crop, review_state=REVIEW_NEEDS_CROP_REVIEW, warnings=[],
+                   segmentation_confidence=0.6)
+    )
+    warned = dc_replace(
+        crop,
+        crop_id="crop_warned",
+        crop_index=crop.crop_index + 1,
+        review_state=REVIEW_NEEDS_CROP_REVIEW,
+        warnings=["touches_image_edge"],
+        segmentation_confidence=0.9,
+    )
+    store.add_crop(warned)
+
+    response = client.post(f"/api/collections/{collection_id}/relax-crop-review")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["relaxed_crop_count"] == 1
+    states = {
+        stamp["crop_id"]: stamp["review_state"] for stamp in payload["pages"][0]["stamps"]
+    }
+    assert states[crop_id] == "unreviewed"
+    assert states["crop_warned"] == "needs_crop_review"
+
+    assert client.post("/api/collections/col_missing/relax-crop-review").status_code == 404

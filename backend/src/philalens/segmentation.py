@@ -32,6 +32,14 @@ class SegmentationResult:
     detector: str = "opencv"
 
 
+# Detections with no geometry warnings are review-flagged only below this
+# confidence. YOLO scores correct stamp detections at 0.4-0.65 routinely, so
+# a higher bar (the original 0.7) flooded the review queue with fine crops:
+# on the user's full 241-page collection it flagged 1,383 warning-free crops,
+# ~87% of which were kept unchanged during calibration curation.
+REVIEW_CONFIDENCE_BAR = 0.45
+
+
 def detect_stamp_crops(
     page_id: str,
     normalized_image_path: Path,
@@ -81,7 +89,9 @@ def detect_stamp_crops(
             detector_confidence=detection.confidence,
         )
         review_state = (
-            REVIEW_NEEDS_CROP_REVIEW if warnings or confidence < 0.7 else REVIEW_UNREVIEWED
+            REVIEW_NEEDS_CROP_REVIEW
+            if warnings or confidence < REVIEW_CONFIDENCE_BAR
+            else REVIEW_UNREVIEWED
         )
 
         crops.append(

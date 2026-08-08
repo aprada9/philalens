@@ -24,7 +24,7 @@ from .exports import build_collection_csv, build_collection_export, build_evalua
 from .imaging import normalize_image, safe_filename, supported_image_extension
 from .market_evidence import MarketEvidenceError, gather_market_evidence
 from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord, StampCrop
-from .segmentation import detect_stamp_crops, recrop_stamp
+from .segmentation import REVIEW_CONFIDENCE_BAR, detect_stamp_crops, recrop_stamp
 from .sources import build_source_adapters_from_settings, market_source_status
 from .storage import PhilalensStore, new_id, utc_now
 from .vision import VisionObservationError, build_vision_adapter_from_settings
@@ -671,6 +671,35 @@ def create_manual_crop(page_id: str, create: CropCreate) -> dict[str, object]:
     if export is None:
         raise HTTPException(status_code=500, detail="Collection was not found after crop creation.")
     return export
+
+
+@app.post("/api/collections/{collection_id}/relax-crop-review")
+def relax_crop_review(collection_id: str) -> dict[str, object]:
+    """Unflag review-pending crops that pass the current confidence bar.
+
+    Applies today's flag rule to crops detected under an older, stricter one:
+    a crop with no geometry warnings and detector confidence at or above
+    REVIEW_CONFIDENCE_BAR no longer needs human review. Crops with warnings
+    stay flagged.
+    """
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    relaxed = 0
+    for page in store.list_pages(collection_id):
+        for crop in store.list_crops_for_page(page.page_id):
+            if (
+                crop.review_state == REVIEW_NEEDS_CROP_REVIEW
+                and not crop.warnings
+                and crop.segmentation_confidence >= REVIEW_CONFIDENCE_BAR
+            ):
+                store.update_crop(replace(crop, review_state=REVIEW_UNREVIEWED))
+                relaxed += 1
+
+    export = build_collection_export(store, collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after update.")
+    return {**export, "relaxed_crop_count": relaxed}
 
 
 @app.post("/api/pages/{page_id}/redetect")
