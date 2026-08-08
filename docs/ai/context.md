@@ -65,8 +65,9 @@ re-curated the calibration pages: 99 crops, 0 pending review, all 99
 
 ## User Intent
 
-The user has many stamp album page photos, around 80 or more images for a
-collection. Each page contains multiple stamps. The desired tool should let the
+The user has many stamp album page photos: the confirmed full universe is
+241 page images (~685 MB, mostly HEIC — earlier estimates said ~80). Each
+page contains multiple stamps, so expect roughly 8,000 crops collection-wide. The desired tool should let the
 user upload page photos, analyze each stamp, cross-check against existing
 databases, philatelic knowledge, and available market evidence, then estimate
 the potential value of each stamp and the whole collection.

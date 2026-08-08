@@ -104,30 +104,64 @@ export default function App() {
     [applyExport, refreshCollections, reportError],
   );
 
+  // Uploads are chunked client-side so any number of pages can be selected
+  // at once (each request stays small and page detection runs per chunk).
+  // Pages already in the collection are skipped server-side by filename, so
+  // a failed upload is resumed by simply re-selecting the same files.
+  const UPLOAD_CHUNK_SIZE = 20;
+
   const handleUpload = useCallback(
     (files: FileList | null) => {
       if (!files || files.length === 0) return;
-      setNotice(null);
-      // With a collection open, uploads extend it; pages whose filename is
-      // already in the collection are skipped server-side, so re-selecting
-      // the whole photo folder is safe.
-      if (exp) {
-        void mutate(async () => {
-          const result = await api.addPagesToCollection(exp.collection.collection_id, files);
-          const skipped = result.skipped_duplicate_filenames ?? [];
+      const allFiles = Array.from(files);
+      void (async () => {
+        setBusy(true);
+        setError(null);
+        setNotice(null);
+        let collectionId = exp?.collection.collection_id ?? null;
+        let added = 0;
+        let skippedCount = 0;
+        let latest: CollectionExport | null = null;
+        let processed = 0;
+        try {
+          for (let start = 0; start < allFiles.length; start += UPLOAD_CHUNK_SIZE) {
+            const chunk = allFiles.slice(start, start + UPLOAD_CHUNK_SIZE);
+            setNotice(
+              `Uploading and detecting stamps… ${processed}/${allFiles.length} pages done`,
+            );
+            if (collectionId === null) {
+              latest = await api.uploadCollection(chunk);
+              collectionId = latest.collection.collection_id;
+              added += latest.pages.length;
+            } else {
+              latest = await api.addPagesToCollection(collectionId, chunk);
+              added += latest.added_page_count ?? 0;
+              skippedCount += (latest.skipped_duplicate_filenames ?? []).length;
+            }
+            processed += chunk.length;
+            applyExport(latest);
+          }
+          if (latest) applyExport(latest, true);
+          await refreshCollections();
           setNotice(
-            `Added ${result.added_page_count ?? 0} pages` +
-              (skipped.length > 0
-                ? `; skipped ${skipped.length} already uploaded (${skipped.slice(0, 5).join(", ")}${skipped.length > 5 ? ", …" : ""})`
-                : ""),
+            `Added ${added} pages` +
+              (skippedCount > 0 ? `; skipped ${skippedCount} already uploaded` : ""),
           );
-          return result;
-        }, true);
-      } else {
-        void mutate(() => api.uploadCollection(files), true);
-      }
+        } catch (exc) {
+          reportError(exc);
+          setNotice(
+            `Upload interrupted after ${added} new pages — everything ingested so far is ` +
+              "saved. Re-select the same files to continue; already-uploaded pages are " +
+              "skipped automatically.",
+          );
+          if (latest) applyExport(latest, true);
+          await refreshCollections();
+        } finally {
+          setBusy(false);
+        }
+      })();
     },
-    [exp, mutate],
+    [exp, applyExport, refreshCollections, reportError],
   );
 
   const handleCropCommit = useCallback(

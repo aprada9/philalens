@@ -2,7 +2,21 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 4): Backups + Year Slider (pre-full-run)
+## Latest Session (2026-08-08, part 5): Chunked Upload for the Real Collection Size
+
+The user's full collection is 241 pages / ~685 MB (not ~80 pages as earlier
+estimated; docs updated). A single upload request would exceed the 120-file
+batch limit and be fragile at 685 MB, so the frontend now chunks uploads
+client-side: any number of selected files is sent in sequential batches of
+20 (each batch ingests + runs detection server-side), with live progress in
+the notice bar and the page list growing as chunks land. A failure mid-way
+keeps everything ingested so far; re-selecting the same files resumes via
+the filename dedupe. Scale expectations: ~8,000 crops, Tier 1 at
+gpt-4.1-mini ≈ $12-20; the crop-curation queue is the real bottleneck
+(calibration flagged ~57% of crops — consider tuning
+PHILALENS_STAMP_YOLO_CONFIDENCE after sampling flag rates on full pages).
+
+## Earlier Session (2026-08-08, part 4): Backups + Year Slider (pre-full-run)
 
 - Database backups: `PhilalensStore.create_backup` (SQLite online backup
   API, `data/local/backups/`, keep last 10) runs automatically after every
