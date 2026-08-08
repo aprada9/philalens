@@ -166,10 +166,18 @@ export interface CostEstimate {
   note?: string;
 }
 
+export interface VisionModelOption {
+  id: string;
+  note: string;
+  recommended: boolean;
+  estimated_usd_per_100_stamps: number | null;
+}
+
 export interface AppSettings {
   vision_provider: string;
   openai_api_key_set: boolean;
   openai_vision_model: string;
   openai_vision_detail: string;
+  vision_model_options: VisionModelOption[];
   market_sources: Record<string, string>;
 }

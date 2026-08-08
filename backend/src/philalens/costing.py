@@ -28,6 +28,69 @@ OPENAI_MODEL_RATES_USD_PER_MILLION: dict[str, OpenAIModelRate] = {
     "gpt-4.1-nano": OpenAIModelRate(0.10, 0.40, 0.025),
 }
 
+# Curated vision-model choices surfaced in the settings dropdown. Estimates
+# are computed from the same rough token heuristic as pre-run estimates
+# (high image detail). Reasoning models (gpt-5.4 family) bill hidden
+# reasoning tokens as output, so their real cost runs above the estimate.
+_VISION_MODEL_CHOICES: list[dict[str, str | bool]] = [
+    {
+        "id": "gpt-4.1-mini",
+        "note": "Proven default — calibration identifications were good at ~$0.07 per 46 stamps.",
+        "recommended": True,
+    },
+    {
+        "id": "gpt-5.4-mini",
+        "note": "Smarter reasoning model at a similar price — best value upgrade to try.",
+        "recommended": True,
+    },
+    {
+        "id": "gpt-4.1",
+        "note": "Stronger non-reasoning model; ~5x the price of the default.",
+        "recommended": False,
+    },
+    {
+        "id": "gpt-5.4",
+        "note": (
+            "Top-tier reasoning; for tricky stamps or a flagged-only re-run. "
+            "Reasoning tokens make real cost higher than the estimate."
+        ),
+        "recommended": False,
+    },
+    {
+        "id": "gpt-5.5",
+        "note": "Newest flagship; most capable and most expensive sensible option.",
+        "recommended": False,
+    },
+    {
+        "id": "gpt-4.1-nano",
+        "note": "Cheapest; identification quality drops noticeably — not recommended.",
+        "recommended": False,
+    },
+]
+
+
+def vision_model_options(image_detail: str = "high") -> list[dict[str, object]]:
+    """Dropdown options with a rough cost-per-100-stamps estimate."""
+    options: list[dict[str, object]] = []
+    for choice in _VISION_MODEL_CHOICES:
+        model_id = str(choice["id"])
+        estimate = estimate_openai_vision_run_cost(
+            model=model_id,
+            image_detail=image_detail,
+            crop_count=100,
+            billable_api_call_count=100,
+        )
+        options.append(
+            {
+                "id": model_id,
+                "note": choice["note"],
+                "recommended": choice["recommended"],
+                "estimated_usd_per_100_stamps": estimate["estimated_total_cost_usd"],
+            }
+        )
+    return options
+
+
 PRICING_NOTE = (
     "Costs use token usage returned by OpenAI and a local USD-per-million-token "
     "pricing table. Confirm current pricing in OpenAI billing for final charges."

@@ -57,3 +57,18 @@ def test_estimate_openai_vision_run_cost_counts_billable_crops_only() -> None:
     assert estimate["billable_api_call_count"] == 8
     assert estimate["skipped_crop_review_count"] == 2
     assert estimate["estimated_total_cost_usd"] is not None
+
+
+def test_vision_model_options_include_estimates_and_recommendation() -> None:
+    from philalens.costing import vision_model_options
+
+    options = vision_model_options("high")
+    ids = [option["id"] for option in options]
+    assert "gpt-4.1-mini" in ids
+    assert "gpt-5.4-mini" in ids
+    default = next(option for option in options if option["id"] == "gpt-4.1-mini")
+    assert default["recommended"] is True
+    assert isinstance(default["estimated_usd_per_100_stamps"], float)
+    assert 0 < default["estimated_usd_per_100_stamps"] < 1
+    # Every curated option must have a price in the rates table.
+    assert all(option["estimated_usd_per_100_stamps"] is not None for option in options)

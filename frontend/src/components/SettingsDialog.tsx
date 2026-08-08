@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getSettings, updateSettings } from "../api";
+import type { VisionModelOption } from "../types";
 
 interface Props {
   onClose: () => void;
@@ -10,6 +11,8 @@ export default function SettingsDialog({ onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [keySet, setKeySet] = useState(false);
   const [model, setModel] = useState("gpt-4.1-mini");
+  const [modelOptions, setModelOptions] = useState<VisionModelOption[]>([]);
+  const [customModel, setCustomModel] = useState(false);
   const [detail, setDetail] = useState("high");
   const [ebayAppId, setEbayAppId] = useState("");
   const [ebayCertId, setEbayCertId] = useState("");
@@ -24,6 +27,12 @@ export default function SettingsDialog({ onClose }: Props) {
         setProvider(settings.vision_provider);
         setKeySet(settings.openai_api_key_set);
         setModel(settings.openai_vision_model);
+        setModelOptions(settings.vision_model_options ?? []);
+        setCustomModel(
+          !(settings.vision_model_options ?? []).some(
+            (option) => option.id === settings.openai_vision_model,
+          ),
+        );
         setDetail(settings.openai_vision_detail);
         setEbayConfigured(settings.market_sources?.ebay_browse === "configured");
       } catch (exc) {
@@ -82,7 +91,41 @@ export default function SettingsDialog({ onClose }: Props) {
         </div>
         <div className="field">
           <label>Vision model</label>
-          <input value={model} onChange={(event) => setModel(event.target.value)} />
+          <select
+            value={customModel ? "__custom__" : model}
+            onChange={(event) => {
+              if (event.target.value === "__custom__") {
+                setCustomModel(true);
+              } else {
+                setCustomModel(false);
+                setModel(event.target.value);
+              }
+            }}
+          >
+            {modelOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.id}
+                {option.recommended ? " ★" : ""}
+                {option.estimated_usd_per_100_stamps !== null
+                  ? ` — ~$${option.estimated_usd_per_100_stamps.toFixed(2)} / 100 stamps`
+                  : ""}
+              </option>
+            ))}
+            <option value="__custom__">Custom model…</option>
+          </select>
+          {customModel && (
+            <input
+              value={model}
+              placeholder="exact OpenAI model id"
+              onChange={(event) => setModel(event.target.value)}
+              style={{ marginTop: 6 }}
+            />
+          )}
+          {!customModel && (
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
+              {modelOptions.find((option) => option.id === model)?.note ?? ""}
+            </p>
+          )}
         </div>
         <div className="field">
           <label>Image detail</label>

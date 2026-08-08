@@ -2,7 +2,28 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08): Evaluation Scopes, Run Progress Panel, Stop Button
+## Latest Session (2026-08-08, part 2): eBay Live + Vision Model Dropdown
+
+- The user's eBay developer application was approved; the marketplace
+  account deletion exemption was granted; App ID/Cert ID were entered in
+  Settings. The user confirms eBay evidence gathering "works like a charm"
+  (accuracy not yet judged).
+- Settings now offers a curated vision-model dropdown built from
+  `costing.vision_model_options()` (exposed via `GET /api/settings`):
+  gpt-4.1-mini (default, ★), gpt-5.4-mini (★ value upgrade), gpt-4.1,
+  gpt-5.4, gpt-5.5, gpt-4.1-nano — each with a rough $/100-stamps estimate
+  from the existing token heuristic and an honest note (reasoning models
+  under-estimate because hidden reasoning tokens bill as output). A
+  "Custom model…" option keeps arbitrary model ids possible.
+- Measured real cost reference: gpt-4.1-mini at high detail ≈ $0.0015 per
+  stamp (46 calls / $0.069), so the full ~80-page collection (~2,600
+  stamps) lands around $4-6 at the default model.
+- Next: user proceeds to the full-collection workflow (upload in batches,
+  curate via queue, evaluate with the "Not analyzed yet" scope, gather
+  evidence on flagged); Phase 4 (recapture kit + collection report) is the
+  next build phase.
+
+## Earlier Session (2026-08-08, part 1): Evaluation Scopes, Run Progress Panel, Stop Button
 
 User feedback session. 66 backend tests pass; frontend typechecks and builds.
 

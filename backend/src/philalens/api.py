@@ -14,7 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import PROJECT_ROOT, get_settings
-from .costing import estimate_openai_vision_run_cost, non_openai_cost_estimate
+from .costing import (
+    estimate_openai_vision_run_cost,
+    non_openai_cost_estimate,
+    vision_model_options,
+)
 from .evaluation import EvaluationCancelledError, evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
@@ -391,6 +395,7 @@ def get_app_settings() -> dict[str, object]:
         "openai_api_key_set": bool(settings.openai_api_key),
         "openai_vision_model": settings.openai_vision_model,
         "openai_vision_detail": settings.openai_vision_detail,
+        "vision_model_options": vision_model_options(settings.openai_vision_detail),
         "market_sources": market_source_status(settings),
     }
 
