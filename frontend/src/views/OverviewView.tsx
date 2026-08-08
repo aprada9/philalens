@@ -369,10 +369,19 @@ export default function OverviewView({
               <a href={`/api/collections/${exp.collection.collection_id}/export.csv`}>
                 <button className="btn">Export CSV</button>
               </a>
+              <a href="/api/backup.sqlite">
+                <button className="btn">Download backup</button>
+              </a>
               <button className="btn danger" onClick={onDeleteCollection} disabled={busy}>
                 Delete collection
               </button>
             </div>
+            <p className="muted" style={{ marginBottom: 0, fontSize: 12 }}>
+              Every analysis is saved to the local database as it happens, and a snapshot is
+              written to data/local/backups after each run. The backup file holds all results —
+              store a copy off this machine to protect your API spend; restore by replacing
+              data/local/philalens.sqlite with it.
+            </p>
           </div>
         </div>
       </div>

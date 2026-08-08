@@ -57,6 +57,31 @@ class PhilalensStore:
     def __init__(self, database_path: Path) -> None:
         self.database_path = database_path
 
+    def create_backup(self, backups_dir: Path, keep: int = 10) -> Path:
+        """Write a consistent snapshot of the database and prune old ones.
+
+        Uses SQLite's online backup API, so it is safe while the store is in
+        use. The snapshot contains every durable record (runs, observations,
+        candidates, evidence, valuations) — the part of the data that cost
+        API tokens to produce. Restoring is copying the snapshot back to the
+        live database path.
+        """
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        stamp = utc_now().split(".")[0].replace("-", "").replace(":", "")
+        destination = backups_dir / f"philalens-{stamp}.sqlite"
+        source = self._connect()
+        target = sqlite3.connect(destination)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+
+        backups = sorted(backups_dir.glob("philalens-*.sqlite"))
+        for old in backups[: max(0, len(backups) - keep)]:
+            old.unlink(missing_ok=True)
+        return destination
+
     def initialize(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:

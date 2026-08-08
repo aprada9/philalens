@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BUCKETS, bucketMeta, stampBucket, stampHeadline, topCandidate } from "../buckets";
 import type { CollectionExport, Stamp } from "../types";
 
-export type StampSort = "attention" | "page" | "confidence";
+export type StampSort = "attention" | "page" | "confidence" | "year_asc" | "year_desc";
 
 interface Props {
   exp: CollectionExport;
@@ -49,8 +49,7 @@ export default function StampsView({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<StampSort>("attention");
   const [countryFilter, setCountryFilter] = useState("");
-  const [yearMin, setYearMin] = useState("");
-  const [yearMax, setYearMax] = useState("");
+  const [yearRange, setYearRange] = useState<[number, number] | null>(null);
 
   const pageByCrop = useMemo(() => {
     const map = new Map<string, number>();
@@ -80,20 +79,40 @@ export default function StampsView({
     return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [stamps]);
 
+  // Bounds of the year slider: the span of AI-identified years in the
+  // collection. Null when no stamp has a year yet.
+  const yearBounds = useMemo<[number, number] | null>(() => {
+    const years = stamps
+      .map((stamp) => topCandidate(stamp)?.year)
+      .filter((year): year is number => typeof year === "number");
+    if (years.length === 0) return null;
+    return [Math.min(...years), Math.max(...years)];
+  }, [stamps]);
+
+  // Keep the selected range valid when the collection (and its bounds) change.
+  useEffect(() => {
+    if (!yearBounds) {
+      setYearRange(null);
+      return;
+    }
+    setYearRange((range) => {
+      if (!range) return null;
+      const lo = Math.max(yearBounds[0], Math.min(range[0], yearBounds[1]));
+      const hi = Math.min(yearBounds[1], Math.max(range[1], yearBounds[0]));
+      return lo === yearBounds[0] && hi === yearBounds[1] ? null : [lo, hi];
+    });
+  }, [yearBounds]);
+
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const minYear = yearMin.trim() === "" ? null : Number(yearMin);
-    const maxYear = yearMax.trim() === "" ? null : Number(yearMax);
     let list = stamps.filter((stamp) => {
       if (bucketFilter && stampBucket(stamp) !== bucketFilter) return false;
       const candidate = topCandidate(stamp);
       if (countryFilter && candidate?.issuer !== countryFilter) return false;
-      if (minYear !== null || maxYear !== null) {
-        // Year filters only match stamps with an identified year.
+      if (yearRange) {
+        // A narrowed year range only matches stamps with an identified year.
         const year = candidate?.year ?? null;
-        if (year === null) return false;
-        if (minYear !== null && !Number.isNaN(minYear) && year < minYear) return false;
-        if (maxYear !== null && !Number.isNaN(maxYear) && year > maxYear) return false;
+        if (year === null || year < yearRange[0] || year > yearRange[1]) return false;
       }
       if (!term) return true;
       const haystack = [
@@ -120,6 +139,15 @@ export default function StampsView({
       list.sort(
         (a, b) => (topCandidate(b)?.match_score ?? 0) - (topCandidate(a)?.match_score ?? 0),
       );
+    } else if (sort === "year_asc") {
+      // Stamps without an identified year sort last.
+      list.sort(
+        (a, b) => (topCandidate(a)?.year ?? 9999) - (topCandidate(b)?.year ?? 9999),
+      );
+    } else if (sort === "year_desc") {
+      list.sort(
+        (a, b) => (topCandidate(b)?.year ?? -1) - (topCandidate(a)?.year ?? -1),
+      );
     } else {
       list.sort(
         (a, b) =>
@@ -128,7 +156,7 @@ export default function StampsView({
       );
     }
     return list;
-  }, [stamps, bucketFilter, query, sort, pageByCrop, countryFilter, yearMin, yearMax]);
+  }, [stamps, bucketFilter, query, sort, pageByCrop, countryFilter, yearRange]);
 
   const drawerStamp = stamps.find((stamp) => stamp.crop_id === drawerCropId) ?? null;
 
@@ -174,26 +202,19 @@ export default function StampsView({
             </option>
           ))}
         </select>
-        <input
-          className="year-input"
-          type="number"
-          placeholder="Year from"
-          value={yearMin}
-          onChange={(event) => setYearMin(event.target.value)}
-          title="Only stamps with an identified year match"
-        />
-        <input
-          className="year-input"
-          type="number"
-          placeholder="to"
-          value={yearMax}
-          onChange={(event) => setYearMax(event.target.value)}
-          title="Only stamps with an identified year match"
-        />
+        {yearBounds && yearBounds[0] < yearBounds[1] && (
+          <YearRangeSlider
+            bounds={yearBounds}
+            range={yearRange}
+            onChange={setYearRange}
+          />
+        )}
         <select value={sort} onChange={(event) => setSort(event.target.value as StampSort)}>
           <option value="attention">Sort: Attention first</option>
           <option value="page">Sort: Page order</option>
           <option value="confidence">Sort: Identity confidence</option>
+          <option value="year_asc">Sort: Year, oldest first</option>
+          <option value="year_desc">Sort: Year, newest first</option>
         </select>
       </div>
 
@@ -252,6 +273,67 @@ export default function StampsView({
           onGatherEvidence={() => onGatherEvidence(drawerStamp.crop_id)}
           onDelete={() => onDeleteCrop(drawerStamp.crop_id)}
         />
+      )}
+    </div>
+  );
+}
+
+function YearRangeSlider({
+  bounds,
+  range,
+  onChange,
+}: {
+  bounds: [number, number];
+  range: [number, number] | null;
+  onChange: (range: [number, number] | null) => void;
+}) {
+  const [lo, hi] = range ?? bounds;
+  const isFiltering = range !== null;
+
+  const commit = (nextLo: number, nextHi: number) => {
+    if (nextLo <= bounds[0] && nextHi >= bounds[1]) {
+      onChange(null); // full span = no filter (stamps without a year included)
+    } else {
+      onChange([nextLo, nextHi]);
+    }
+  };
+
+  const percent = (year: number) =>
+    ((year - bounds[0]) / (bounds[1] - bounds[0])) * 100;
+
+  return (
+    <div
+      className="year-slider"
+      title="Filter by identified year — a narrowed range only matches stamps with a year"
+    >
+      <span className={isFiltering ? "on" : ""}>{lo}</span>
+      <div className="ys-track">
+        <div
+          className="ys-fill"
+          style={{ left: `${percent(lo)}%`, width: `${percent(hi) - percent(lo)}%` }}
+        />
+        <input
+          type="range"
+          min={bounds[0]}
+          max={bounds[1]}
+          value={lo}
+          onChange={(event) => commit(Math.min(Number(event.target.value), hi), hi)}
+          aria-label="Year from"
+        />
+        <input
+          type="range"
+          min={bounds[0]}
+          max={bounds[1]}
+          value={hi}
+          onChange={(event) => commit(lo, Math.max(Number(event.target.value), lo))}
+          aria-label="Year to"
+        />
+      </div>
+      <span className={isFiltering ? "on" : ""}>{hi}</span>
+      {isFiltering && (
+        <button className="ys-reset" onClick={() => onChange(null)} title="Reset year filter">
+          ×
+        </button>
       )}
     </div>
   );

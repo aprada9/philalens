@@ -2,7 +2,24 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 3): Incremental Upload + Stamps Filters
+## Latest Session (2026-08-08, part 4): Backups + Year Slider (pre-full-run)
+
+- Database backups: `PhilalensStore.create_backup` (SQLite online backup
+  API, `data/local/backups/`, keep last 10) runs automatically after every
+  completed/cancelled evaluation or evidence job; `GET /api/backup.sqlite`
+  streams a fresh snapshot (Overview "Download backup" button + restore
+  note). Verified live (860 KB snapshot of the calibration DB). Clarified
+  to the user: per-crop checkpointing already made shutdowns safe; backups
+  protect against database loss. The DB is the token-spend artifact —
+  images are derivable from originals + stored crop boxes.
+- Stamps view: the year from/to inputs became a dual-thumb range slider
+  bounded by the collection's identified years (full span = no filter,
+  narrowed range matches only stamps with a year, reset ×), and sorting
+  gained "Year, oldest first" / "Year, newest first". Browser-verified.
+- 70 backend tests pass; frontend typechecks and builds.
+- The user is about to start the full ~80-page run.
+
+## Earlier Session (2026-08-08, part 3): Incremental Upload + Stamps Filters
 
 Preparation for the full ~80-page run:
 

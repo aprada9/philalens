@@ -211,3 +211,25 @@ def test_storage_and_exports_round_trip_collection(tmp_path: Path) -> None:
     collection_export = cast(dict[str, Any], export["collection"])
     assert collection_export["page_count"] == 0
     assert export["pages"] == []
+
+
+def test_create_backup_snapshots_and_prunes(tmp_path: Path) -> None:
+    store = PhilalensStore(tmp_path / "philalens.sqlite")
+    store.initialize()
+    collection = store.create_collection(title="backup fixture")
+
+    backups_dir = tmp_path / "backups"
+    first = store.create_backup(backups_dir)
+    assert first.exists()
+    assert first.read_bytes()[:16] == b"SQLite format 3\x00"
+
+    # The snapshot is a fully usable database with the same records.
+    restored = PhilalensStore(first)
+    assert restored.get_collection(collection.collection_id) is not None
+
+    # Pruning keeps only the most recent `keep` snapshots.
+    for index in range(4):
+        (backups_dir / f"philalens-2020010{index}T000000.sqlite").write_bytes(b"old")
+    latest = store.create_backup(backups_dir, keep=1)
+    remaining = [path.name for path in backups_dir.glob("philalens-*.sqlite")]
+    assert remaining == [latest.name]

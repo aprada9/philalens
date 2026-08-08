@@ -107,6 +107,10 @@ class Settings:
         return self.data_dir / "collections"
 
     @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
+
+    @property
     def stamp_yolo_model_path(self) -> Path:
         return Path(
             _getenv(

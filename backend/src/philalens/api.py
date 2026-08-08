@@ -496,6 +496,22 @@ def get_evaluation_run(run_id: str) -> dict[str, object]:
     return export
 
 
+@app.get("/api/backup.sqlite")
+def download_database_backup() -> FileResponse:
+    """Stream a fresh, consistent snapshot of the full database.
+
+    The snapshot holds every analysis result ever produced (all runs, not
+    just the latest), so keeping a copy off this machine protects the API
+    spend. Restore = replace data/local/philalens.sqlite with the snapshot.
+    """
+    backup_path = store.create_backup(get_settings().backups_dir)
+    return FileResponse(
+        path=backup_path,
+        filename=backup_path.name,
+        media_type="application/octet-stream",
+    )
+
+
 @app.get("/api/collections/{collection_id}/export.json")
 def export_collection_json(collection_id: str) -> JSONResponse:
     export = build_collection_export(store, collection_id)
@@ -830,6 +846,14 @@ def _api_cost_label(cost_payload: object) -> str | None:
     return f"${cost:.4f}" if float(cost) < 0.01 else f"${cost:.2f}"
 
 
+def _snapshot_database_after_job() -> None:
+    """Best-effort post-run backup; never fails the job that triggered it."""
+    try:
+        store.create_backup(get_settings().backups_dir)
+    except OSError:
+        pass
+
+
 def _run_evaluation_job(
     job_id: str,
     collection_id: str,
@@ -884,6 +908,7 @@ def _run_evaluation_job(
                 run_id=run.run_id,
                 cost_actual=run.settings.get("cost_actual"),
             )
+            _snapshot_database_after_job()
             return
         export = build_collection_export(store, collection_id)
         evaluated_count = 0
@@ -900,6 +925,7 @@ def _run_evaluation_job(
             run_id=run.run_id,
             cost_actual=run.settings.get("cost_actual"),
         )
+        _snapshot_database_after_job()
     except Exception as exc:
         _update_evaluation_job(
             job_id,
@@ -963,6 +989,7 @@ def _run_evidence_job(
             ),
             run_id=run.run_id,
         )
+        _snapshot_database_after_job()
     except Exception as exc:
         _update_evaluation_job(
             job_id, status="failed", message="Evidence gathering failed", error=str(exc)

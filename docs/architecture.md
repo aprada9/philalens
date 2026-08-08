@@ -28,6 +28,17 @@ evaluation records for runs, observations, candidates, source evidence,
 valuations, and embedding metadata. The filesystem stores original uploads,
 normalized JPEG page derivatives, and crop images.
 
+Durability: every analysis result is committed per crop as it is produced
+(evaluation runs are per-crop checkpointed and resumable), so a server
+shutdown never loses paid API work. `PhilalensStore.create_backup` writes a
+consistent snapshot via SQLite's online backup API into `data/local/backups/`
+(last 10 kept); a snapshot is taken automatically after every finished or
+stopped evaluation/evidence job, and `GET /api/backup.sqlite` streams a fresh
+one for off-machine storage. Restore = replace `data/local/philalens.sqlite`
+with a snapshot. The database is the token-spend-critical artifact; crop and
+normalized images are derivable from the original photos plus the stored
+crop boxes.
+
 Relevant modules:
 
 - `backend/src/philalens/storage.py`

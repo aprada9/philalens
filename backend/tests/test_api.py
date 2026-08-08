@@ -516,3 +516,19 @@ def test_add_pages_to_collection_skips_duplicate_filenames(tmp_path: Path, monke
         files=[("files", ("page-c.png", payload_bytes, "image/png"))],
     )
     assert missing.status_code == 404
+
+
+def test_backup_endpoint_streams_sqlite_snapshot(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    client = TestClient(philalens.api.app)
+    response = client.get("/api/backup.sqlite")
+    assert response.status_code == 200
+    assert response.content[:16] == b"SQLite format 3\x00"
+    assert "philalens-" in response.headers["content-disposition"]
+    assert list((tmp_path / "data" / "backups").glob("philalens-*.sqlite"))
