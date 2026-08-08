@@ -19,6 +19,7 @@ from .costing import (
 )
 from .models import (
     EVALUATION_STATUS_COMPLETED,
+    EVALUATION_STATUS_INTERRUPTED,
     EVALUATION_STATUS_RUNNING,
     REVIEW_NEEDS_CROP_REVIEW,
     EvaluationRunRecord,
@@ -33,6 +34,15 @@ from .triage import triage_observation
 from .vision import VisionObservationAdapter, VisionObservationError
 
 CROP_READINESS_PIPELINE_VERSION = "tier1-identification-v2"
+
+
+class EvaluationCancelledError(Exception):
+    """Raised by a progress callback to stop a run gracefully.
+
+    Crops processed before the cancellation keep their records (each crop's
+    valuation is its checkpoint), the run is marked ``interrupted``, and it can
+    be resumed later without repeating completed crops.
+    """
 
 # Backoff before each retry of a failed vision call. Tests may monkeypatch
 # this to () to avoid sleeping.
@@ -131,10 +141,15 @@ def evaluate_collection_readiness(
                 duplicate_of[member.crop_id] = group[0].crop_id
     representative_analyses: dict[str, VisionAnalysisResult | None] = {}
 
+    cancelled = False
     total_crops = len(pending_crops)
     for index, crop in enumerate(pending_crops, start=1):
         if progress_callback is not None:
-            progress_callback(index, total_crops, crop)
+            try:
+                progress_callback(index, total_crops, crop)
+            except EvaluationCancelledError:
+                cancelled = True
+                break
         vision_observation_status = "not_connected"
         analysis: VisionAnalysisResult | None = None
         derived_from: str | None = None
@@ -218,10 +233,12 @@ def evaluate_collection_readiness(
         warnings.append("run_resumed_after_interruption")
     if duplicate_of:
         warnings.append("duplicate_crops_shared_vision_results")
+    if cancelled:
+        warnings.append("run_cancelled_by_user")
 
     completed = replace(
         run,
-        status=EVALUATION_STATUS_COMPLETED,
+        status=EVALUATION_STATUS_INTERRUPTED if cancelled else EVALUATION_STATUS_COMPLETED,
         finished_at=utc_now(),
         settings={
             **run.settings,

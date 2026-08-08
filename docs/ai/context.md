@@ -1,6 +1,6 @@
 # Philalens Agent Context
 
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
 ## Plan V2 (2026-08-06) — read this first
 
@@ -52,6 +52,16 @@ section, Overview batch button, Settings eBay fields). See
 `docs/rebuild-plan-v2.md` Phase 3 notes for pending acceptance items. Next:
 Phase 4 (shortlist + recapture loop) once flagged stamps exist and evidence
 quality is judged.
+
+Workflow refinements (2026-08-08, from user feedback): Overview has a
+scope-selectable "Run evaluation" panel (not-analyzed / flagged / failed /
+all — crop id sets computed client-side over the existing selected-crop
+path), the top-bar run pill expands into a detailed progress popover
+(analyzed/pending counts, current stamp, elapsed, estimated cost), and runs
+can be stopped gracefully (`POST /api/evaluation-jobs/{id}/cancel` → run
+marked `interrupted`, per-crop work preserved, resumable). The user
+re-curated the calibration pages: 99 crops, 0 pending review, all 99
+`likely_common` after a full run (user-confirmed as correct).
 
 ## User Intent
 

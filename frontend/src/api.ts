@@ -118,6 +118,10 @@ export function getEvaluationJob(jobId: string): Promise<EvaluationJob> {
   return request(`/api/evaluation-jobs/${jobId}`);
 }
 
+export function cancelEvaluationJob(jobId: string): Promise<EvaluationJob> {
+  return request(`/api/evaluation-jobs/${jobId}/cancel`, { method: "POST" });
+}
+
 export function resumeEvaluationRun(runId: string): Promise<EvaluationJob> {
   return request(`/api/evaluation-runs/${runId}/resume`, { method: "POST" });
 }

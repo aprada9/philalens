@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { bucketMeta, stampBucket, topCandidate } from "../buckets";
 import type { CollectionExport, Stamp } from "../types";
 
@@ -7,13 +7,15 @@ interface Props {
   busy: boolean;
   imageVersion: number;
   onStartQueue: () => void;
-  onEvaluateAll: () => void;
+  onEvaluate: (cropIds?: string[]) => void;
   onResumeRun: (runId: string) => void;
   onOpenBucket: (bucket: string | null) => void;
   onOpenStamp: (cropId: string) => void;
   onGatherEvidenceAll: () => void;
   onDeleteCollection: () => void;
 }
+
+type EvaluateScope = "all" | "not_analyzed" | "attention" | "failed";
 
 /* Fixed segment order = the color-validated adjacency order for the bar. */
 const BAR_ORDER = [
@@ -31,7 +33,7 @@ export default function OverviewView({
   busy,
   imageVersion,
   onStartQueue,
-  onEvaluateAll,
+  onEvaluate,
   onResumeRun,
   onOpenBucket,
   onOpenStamp,
@@ -40,6 +42,7 @@ export default function OverviewView({
 }: Props) {
   const stamps = useMemo(() => exp.pages.flatMap((page) => page.stamps), [exp]);
   const needsReview = exp.collection.needs_crop_review_count;
+  const [evaluateScope, setEvaluateScope] = useState<EvaluateScope>("not_analyzed");
 
   const bucketCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -65,6 +68,46 @@ export default function OverviewView({
   );
 
   const notAnalyzed = exp.collection.stamp_count - analyzedCount;
+
+  // Evaluation scopes: crop id sets the user can target instead of re-running
+  // the whole collection. Crops pending review are excluded — the AI skips
+  // them anyway.
+  const evaluateScopes = useMemo(() => {
+    const eligible = stamps.filter((stamp) => stamp.review_state !== "needs_crop_review");
+    const analyzed = (stamp: Stamp) =>
+      stamp.observation.status === "available" && (stamp.observation.confidence ?? 0) > 0;
+    const scopes: Record<
+      EvaluateScope,
+      { label: string; ids: string[] | undefined; count: number }
+    > = {
+      not_analyzed: {
+        label: "Not analyzed yet",
+        ids: eligible.filter((stamp) => !analyzed(stamp)).map((stamp) => stamp.crop_id),
+        count: 0,
+      },
+      attention: {
+        label: "Re-analyze flagged stamps",
+        ids: eligible
+          .filter((stamp) => bucketMeta(stampBucket(stamp)).attention)
+          .map((stamp) => stamp.crop_id),
+        count: 0,
+      },
+      failed: {
+        label: "Failed extraction",
+        ids: eligible
+          .filter((stamp) =>
+            (stamp.valuation.uncertainty_warnings ?? []).includes("vision_extraction_failed"),
+          )
+          .map((stamp) => stamp.crop_id),
+        count: 0,
+      },
+      all: { label: "All stamps", ids: undefined, count: eligible.length },
+    };
+    for (const key of ["not_analyzed", "attention", "failed"] as const) {
+      scopes[key].count = scopes[key].ids?.length ?? 0;
+    }
+    return scopes;
+  }, [stamps]);
 
   const countries = useMemo(() => {
     const counts = new Map<string, number>();
@@ -106,13 +149,14 @@ export default function OverviewView({
         onClick: onStartQueue,
       };
     }
-    if (notAnalyzed > 0) {
+    if (notAnalyzed > 0 && evaluateScopes.not_analyzed.count > 0) {
       return {
         icon: "🔍",
-        title: `${notAnalyzed} stamps haven't been analyzed yet`,
-        detail: "Crops look ready. Run the AI identification pass over the collection.",
-        action: "Evaluate all",
-        onClick: onEvaluateAll,
+        title: `${evaluateScopes.not_analyzed.count} stamps haven't been analyzed yet`,
+        detail:
+          "Crops look ready. Run the AI identification pass over just the remaining stamps — already-analyzed ones are not re-billed.",
+        action: `Evaluate ${evaluateScopes.not_analyzed.count} remaining`,
+        onClick: () => onEvaluate(evaluateScopes.not_analyzed.ids),
       };
     }
     if (attentionStamps.length > 0) {
@@ -276,6 +320,44 @@ export default function OverviewView({
                   From AI identifications · unverified priors
                 </div>
               </>
+            )}
+          </div>
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <h3>Run evaluation</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Pick what to analyze — you don't have to re-run everything.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <select
+                value={evaluateScope}
+                onChange={(event) => setEvaluateScope(event.target.value as EvaluateScope)}
+              >
+                <option value="not_analyzed">
+                  Not analyzed yet ({evaluateScopes.not_analyzed.count})
+                </option>
+                <option value="attention">
+                  Re-analyze flagged ({evaluateScopes.attention.count})
+                </option>
+                <option value="failed">
+                  Failed extraction ({evaluateScopes.failed.count})
+                </option>
+                <option value="all">All stamps ({evaluateScopes.all.count})</option>
+              </select>
+              <button
+                className="btn primary"
+                disabled={
+                  busy ||
+                  (evaluateScope !== "all" && evaluateScopes[evaluateScope].count === 0)
+                }
+                onClick={() => onEvaluate(evaluateScopes[evaluateScope].ids)}
+              >
+                Evaluate
+              </button>
+            </div>
+            {needsReview > 0 && (
+              <p className="muted" style={{ marginBottom: 0 }}>
+                {needsReview} crops pending review are always skipped until fixed.
+              </p>
             )}
           </div>
           <div className="panel">

@@ -157,7 +157,11 @@ export default function App() {
         try {
           const latest = await api.getEvaluationJob(startedJob.job_id);
           setJob(latest);
-          if (latest.status === "completed" || latest.status === "failed") {
+          if (
+            latest.status === "completed" ||
+            latest.status === "failed" ||
+            latest.status === "cancelled"
+          ) {
             if (exp) applyExport(await api.getCollection(exp.collection.collection_id));
             await refreshCollections();
             return;
@@ -177,8 +181,13 @@ export default function App() {
       if (!exp) return;
       setError(null);
       try {
-        if (!cropIds || cropIds.length === 0) {
-          const estimate = await api.estimateEvaluationCost(exp.collection.collection_id);
+        // Confirm with a cost estimate for anything beyond a single-stamp
+        // re-analyze.
+        if (!cropIds || cropIds.length !== 1) {
+          const estimate = await api.estimateEvaluationCost(
+            exp.collection.collection_id,
+            cropIds && cropIds.length > 0 ? cropIds : undefined,
+          );
           if (estimate.provider !== "none") {
             const costLabel =
               estimate.estimated_total_cost_usd !== null
@@ -234,6 +243,16 @@ export default function App() {
     [startJobPolling, reportError],
   );
 
+  const handleCancelJob = useCallback(async () => {
+    if (!job) return;
+    setError(null);
+    try {
+      setJob(await api.cancelEvaluationJob(job.job_id));
+    } catch (exc) {
+      reportError(exc);
+    }
+  }, [job, reportError]);
+
   const openBucket = useCallback((bucket: string | null) => {
     setBucketFilter(bucket);
     setDrawerCropId(null);
@@ -273,6 +292,7 @@ export default function App() {
         jobRunning={jobRunning}
         theme={theme}
         busy={anyBusy}
+        onCancelJob={() => void handleCancelJob()}
         needsReviewCount={needsReviewCount}
         stampCount={exp?.collection.stamp_count ?? 0}
         onViewChange={setView}
@@ -318,7 +338,7 @@ export default function App() {
                 setSelectedCropId(null);
                 setView("curate");
               }}
-              onEvaluateAll={() => void handleEvaluate()}
+              onEvaluate={(cropIds) => void handleEvaluate(cropIds)}
               onResumeRun={(runId) => void handleResumeRun(runId)}
               onOpenBucket={openBucket}
               onOpenStamp={(cropId) => openStamp(cropId)}

@@ -139,6 +139,8 @@ export interface EvaluationJob {
   collection_id: string;
   job_type?: string;
   status: string;
+  started_at?: string;
+  cancel_requested?: boolean;
   current: number;
   total: number;
   current_crop_id: string | null;

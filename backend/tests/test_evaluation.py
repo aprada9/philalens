@@ -485,3 +485,49 @@ def test_duplicate_crops_share_one_vision_call(tmp_path: Path) -> None:
     assert derived_valuation is not None
     assert derived_valuation.value_bucket == "likely_common"
     assert "derived_from_duplicate_crop" in derived_valuation.uncertainty_warnings
+
+
+def test_cancelled_run_saves_progress_and_resumes(tmp_path: Path) -> None:
+    store = PhilalensStore(tmp_path / "philalens.sqlite")
+    store.initialize()
+    collection = _collection_with_clean_crops(
+        store, tmp_path, ["crop_one", "crop_two", "crop_three"]
+    )
+    adapter = FakeVisionAdapter()
+
+    def cancel_after_first(current: int, total: int, crop: StampCrop) -> None:
+        if current > 1:
+            raise philalens.evaluation.EvaluationCancelledError()
+
+    run = evaluate_collection_readiness(
+        store,
+        collection.collection_id,
+        vision_adapter=adapter,
+        progress_callback=cancel_after_first,
+    )
+
+    assert run is not None
+    assert run.status == "interrupted"
+    assert "run_cancelled_by_user" in run.warnings
+    # The first crop was fully processed and checkpointed before the stop.
+    assert adapter.seen_crop_ids == ["crop_one"]
+    valuations = store.list_stamp_valuations_for_run(run.run_id)
+    assert {valuation.crop_id for valuation in valuations} == {"crop_one"}
+
+    adapter.seen_crop_ids.clear()
+    resumed = evaluate_collection_readiness(
+        store,
+        collection.collection_id,
+        vision_adapter=adapter,
+        resume_run_id=run.run_id,
+    )
+
+    assert resumed is not None
+    assert resumed.status == "completed"
+    assert adapter.seen_crop_ids == ["crop_two", "crop_three"]
+    valuations = store.list_stamp_valuations_for_run(resumed.run_id)
+    assert {valuation.crop_id for valuation in valuations} == {
+        "crop_one",
+        "crop_two",
+        "crop_three",
+    }

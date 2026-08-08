@@ -15,14 +15,14 @@ from pydantic import BaseModel, Field
 
 from .config import PROJECT_ROOT, get_settings
 from .costing import estimate_openai_vision_run_cost, non_openai_cost_estimate
-from .evaluation import evaluate_collection_readiness
+from .evaluation import EvaluationCancelledError, evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
 from .market_evidence import MarketEvidenceError, gather_market_evidence
 from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord, StampCrop
 from .segmentation import detect_stamp_crops, recrop_stamp
 from .sources import build_source_adapters_from_settings, market_source_status
-from .storage import PhilalensStore, new_id
+from .storage import PhilalensStore, new_id, utc_now
 from .vision import VisionObservationError, build_vision_adapter_from_settings
 
 
@@ -227,6 +227,8 @@ def start_evaluation_job(
             "job_id": job_id,
             "collection_id": collection_id,
             "status": "queued",
+            "started_at": utc_now(),
+            "cancel_requested": False,
             "current": 0,
             "total": 0,
             "current_crop_id": None,
@@ -252,6 +254,22 @@ def get_evaluation_job(job_id: str) -> dict[str, object]:
     return _get_evaluation_job_or_404(job_id)
 
 
+@app.post("/api/evaluation-jobs/{job_id}/cancel")
+def cancel_evaluation_job(job_id: str) -> dict[str, object]:
+    job = _get_evaluation_job_or_404(job_id)
+    if job.get("status") not in {"queued", "running"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only queued or running jobs can be stopped (status: {job.get('status')}).",
+        )
+    _update_evaluation_job(
+        job_id,
+        cancel_requested=True,
+        message="Stopping after the current stamp — completed stamps are saved",
+    )
+    return _get_evaluation_job_or_404(job_id)
+
+
 @app.post("/api/evaluation-runs/{run_id}/resume")
 def resume_evaluation_run(run_id: str) -> dict[str, object]:
     run = store.get_evaluation_run(run_id)
@@ -270,6 +288,8 @@ def resume_evaluation_run(run_id: str) -> dict[str, object]:
             "job_id": job_id,
             "collection_id": run.collection_id,
             "status": "queued",
+            "started_at": utc_now(),
+            "cancel_requested": False,
             "current": 0,
             "total": 0,
             "current_crop_id": None,
@@ -765,6 +785,8 @@ def _run_evaluation_job(
         vision_adapter = build_vision_adapter_from_settings(get_settings())
 
         def report_progress(current: int, total: int, crop) -> None:
+            if _evaluation_job_cancel_requested(job_id):
+                raise EvaluationCancelledError()
             _update_evaluation_job(
                 job_id,
                 status="running",
@@ -790,6 +812,21 @@ def _run_evaluation_job(
                 status="failed",
                 message="Collection not found",
                 error="Collection not found.",
+            )
+            return
+        if run.status == "interrupted":
+            done = len(
+                {v.crop_id for v in store.list_stamp_valuations_for_run(run.run_id)}
+            )
+            _update_evaluation_job(
+                job_id,
+                status="cancelled",
+                message=(
+                    f"Stopped: {done} stamps completed and saved. "
+                    "Resume the run from Overview whenever you like."
+                ),
+                run_id=run.run_id,
+                cost_actual=run.settings.get("cost_actual"),
             )
             return
         export = build_collection_export(store, collection_id)
@@ -884,7 +921,7 @@ def _set_evaluation_job(job_id: str, payload: dict[str, object]) -> None:
             finished = [
                 tracked_id
                 for tracked_id, job in evaluation_jobs.items()
-                if job.get("status") in {"completed", "failed"}
+                if job.get("status") in {"completed", "failed", "cancelled"}
             ]
             for tracked_id in finished[: len(evaluation_jobs) - _MAX_TRACKED_EVALUATION_JOBS]:
                 evaluation_jobs.pop(tracked_id, None)
@@ -895,6 +932,12 @@ def _update_evaluation_job(job_id: str, **updates: object) -> None:
         job = dict(evaluation_jobs.get(job_id, {"job_id": job_id}))
         job.update(updates)
         evaluation_jobs[job_id] = job
+
+
+def _evaluation_job_cancel_requested(job_id: str) -> bool:
+    with evaluation_jobs_lock:
+        job = evaluation_jobs.get(job_id)
+        return bool(job and job.get("cancel_requested"))
 
 
 def _get_evaluation_job_or_404(job_id: str) -> dict[str, object]:

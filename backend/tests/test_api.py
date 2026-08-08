@@ -424,3 +424,38 @@ def test_settings_update_stores_ebay_keys(tmp_path: Path, monkeypatch) -> None:
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "PHILALENS_EBAY_APP_ID=app-123" in env_text
     assert "PHILALENS_EBAY_CERT_ID=cert-456" in env_text
+
+
+def test_cancel_evaluation_job_validation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    client = TestClient(philalens.api.app)
+    assert client.post("/api/evaluation-jobs/evaljob_missing/cancel").status_code == 404
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    assert upload.status_code == 200
+    collection_id = upload.json()["collection"]["collection_id"]
+
+    job_id = client.post(f"/api/collections/{collection_id}/evaluate/start").json()["job_id"]
+    for _ in range(20):
+        job_payload = client.get(f"/api/evaluation-jobs/{job_id}").json()
+        if job_payload["status"] in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+    assert job_payload["status"] == "completed"
+
+    finished_cancel = client.post(f"/api/evaluation-jobs/{job_id}/cancel")
+    assert finished_cancel.status_code == 400
+    assert "Only queued or running jobs" in finished_cancel.json()["detail"]

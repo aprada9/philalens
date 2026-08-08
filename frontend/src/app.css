@@ -1077,3 +1077,69 @@ kbd {
   gap: 8px;
   margin-top: 14px;
 }
+
+/* ---- run progress detail panel (TopBar pill popover) ---- */
+
+.runpill {
+  cursor: pointer;
+}
+
+.runpanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  z-index: 30;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.runpanel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.runpanel-head .close {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.runpanel-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--raised);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.runpanel-bar > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.runpanel-crop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.runpanel-crop img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}

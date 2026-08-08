@@ -1,8 +1,52 @@
 # Session Handoff
 
-Last updated: 2026-08-07
+Last updated: 2026-08-08
 
-## Latest Session (2026-08-07, part 2): Phase 3 Implemented — Tier 2 Market Evidence
+## Latest Session (2026-08-08): Evaluation Scopes, Run Progress Panel, Stop Button
+
+User feedback session. 66 backend tests pass; frontend typechecks and builds.
+
+- The 2026-08-07 discrepancy resolved itself: the user redid curation and ran
+  a full evaluation (run_4bf9edfb2c414d4f, 99 crops, all `likely_common`,
+  which the user confirms matches reality; 8 false-positive crops deleted,
+  0 pending review).
+- "Gather evidence → Not Found" bug root cause: the dev uvicorn (started
+  without `--reload` before the Phase 3 commit) served the new frontend but
+  had no evidence routes. No code bug. The server was restarted WITH
+  `--reload` and the endpoint was verified live against a real crop
+  (3 Wikidata reference items + explicit no-range reason). If the user
+  starts the server manually again, `--reload` is recommended.
+- Evaluation scopes: Overview has a "Run evaluation" panel with a scope
+  select — Not analyzed yet / Re-analyze flagged / Failed extraction /
+  All stamps — computing crop id sets client-side and passing them to the
+  existing selected-crop evaluation path. The dynamic next-step card now
+  evaluates only the remaining stamps instead of everything. All multi-crop
+  runs (not just full runs) show the cost-estimate confirm dialog.
+- Run progress detail: the top-bar pill shows "N/M" and is clickable — a
+  popover shows analyzed/pending counts, a live progress bar, current stamp
+  thumbnail, elapsed time, estimated cost, and a "Stop run" button.
+- Graceful stop: `POST /api/evaluation-jobs/{job_id}/cancel` sets a flag;
+  the progress callback raises `EvaluationCancelledError`; the run is marked
+  `interrupted` with warning `run_cancelled_by_user`, every already-analyzed
+  crop keeps its records (per-crop valuation checkpoints, unchanged), and
+  the existing resume flow finishes the rest without re-billing. Covered by
+  `test_cancelled_run_saves_progress_and_resumes`.
+- Scale note re-confirmed with the user: the 3 pages are calibration only;
+  the real collection is ~80 pages and the architecture (resumable runs,
+  duplicate grouping, cost estimates) was built for that. Full-collection
+  run remains Phase 5.
+
+NEXT STEPS:
+
+1. eBay keys into Settings when the developer application clears (may take
+   days; nothing blocks on it).
+2. All 99 calibration stamps are `likely_common`, so Tier 2 has no flagged
+   targets. Consider adding 1-2 album pages with suspected-interesting
+   material to exercise the investigate path, or proceed to Phase 4
+   (recapture kit + shortlist + collection report), which does not depend
+   on eBay.
+
+## Earlier Session (2026-08-07, part 2): Phase 3 Implemented — Tier 2 Market Evidence
 
 All 64 backend tests pass; frontend typechecks and builds. Implemented per
 `docs/rebuild-plan-v2.md` Phase 3 (see its notes for full detail):
