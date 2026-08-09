@@ -76,17 +76,6 @@ export default function App() {
     [applyExport, reportError],
   );
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const list = await api.listCollections();
-        setCollections(list);
-        if (list.length > 0) applyExport(await api.getCollection(list[0].collection_id));
-      } catch (exc) {
-        reportError(exc);
-      }
-    })();
-  }, [applyExport, reportError]);
 
   // Local page-state update for hot review-queue actions: the server
   // confirms the change with a light response and the client mirrors it,
@@ -336,7 +325,7 @@ export default function App() {
             latest.status === "failed" ||
             latest.status === "cancelled"
           ) {
-            if (exp) applyExport(await api.getCollection(exp.collection.collection_id));
+            applyExport(await api.getCollection(latest.collection_id));
             await refreshCollections();
             return;
           }
@@ -347,8 +336,24 @@ export default function App() {
       };
       window.setTimeout(() => void poll(), 700);
     },
-    [exp, applyExport, refreshCollections, reportError],
+    [applyExport, refreshCollections, reportError],
   );
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const list = await api.listCollections();
+        setCollections(list);
+        if (list.length > 0) applyExport(await api.getCollection(list[0].collection_id));
+        // Re-attach to a run that survived a page reload: the backend keeps
+        // job progress server-side, the browser only forgot the job id.
+        const { jobs } = await api.listActiveEvaluationJobs();
+        if (jobs.length > 0) startJobPolling(jobs[jobs.length - 1]);
+      } catch (exc) {
+        reportError(exc);
+      }
+    })();
+  }, [applyExport, reportError, startJobPolling]);
 
   const handleEvaluate = useCallback(
     async (cropIds?: string[]) => {

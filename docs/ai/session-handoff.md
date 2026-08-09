@@ -2,7 +2,19 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09, part 2): Phase 4 Implemented
+## Latest Session (2026-08-09, part 3): Job Re-Attach After Page Reload
+
+The user finished Tier 1 on all currently-curated crops (51 flagged stamps
+collection-wide now; ~2,600 crops still awaiting curation, deferred by
+choice). Bug fix: reloading the page mid-run lost the progress panel — the
+job id lived only in browser memory. `GET /api/evaluation-jobs` now lists
+active (queued/running) jobs and the app re-attaches on load, restoring the
+pill, detail popover, and Stop button. `startJobPolling` also uses the
+job's own collection_id for the completion refresh instead of a possibly
+stale closure. Next user step: the Overview batch "Gather market evidence
+for all 51 flagged stamps", then sold-comp ranges per stamp.
+
+## Earlier Session (2026-08-09, part 2): Phase 4 Implemented
 
 75 backend tests pass; frontend builds; live-verified against the real
 collection (kit lists the 6 flagged stamps; report shows 599 analyzed).

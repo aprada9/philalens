@@ -324,6 +324,14 @@ def start_evaluation_job(
     return _get_evaluation_job_or_404(job_id)
 
 
+@app.get("/api/evaluation-jobs")
+def list_active_evaluation_jobs() -> dict[str, object]:
+    """Active (queued/running) jobs, so a reloaded page can re-attach."""
+    with evaluation_jobs_lock:
+        jobs = [dict(job) for job in evaluation_jobs.values()]
+    return {"jobs": [job for job in jobs if job.get("status") in {"queued", "running"}]}
+
+
 @app.get("/api/evaluation-jobs/{job_id}")
 def get_evaluation_job(job_id: str) -> dict[str, object]:
     return _get_evaluation_job_or_404(job_id)

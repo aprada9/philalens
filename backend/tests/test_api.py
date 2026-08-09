@@ -671,3 +671,36 @@ def test_owner_valuation_recapture_and_reports(tmp_path: Path, monkeypatch) -> N
     assert kit.status_code == 200
     assert "Recapture kit" in kit.text
     assert client.get("/api/collections/col_missing/report.html").status_code == 404
+
+
+def test_active_jobs_listing_for_page_reload_reattach(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    client = TestClient(philalens.api.app)
+    assert client.get("/api/evaluation-jobs").json() == {"jobs": []}
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    collection_id = upload.json()["collection"]["collection_id"]
+
+    job_id = client.post(f"/api/collections/{collection_id}/evaluate/start").json()["job_id"]
+    for _ in range(20):
+        job_payload = client.get(f"/api/evaluation-jobs/{job_id}").json()
+        if job_payload["status"] in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+    assert job_payload["status"] == "completed"
+
+    # Finished jobs are not offered for re-attach.
+    assert client.get("/api/evaluation-jobs").json() == {"jobs": []}

@@ -138,6 +138,10 @@ export function getEvaluationJob(jobId: string): Promise<EvaluationJob> {
   return request(`/api/evaluation-jobs/${jobId}`);
 }
 
+export function listActiveEvaluationJobs(): Promise<{ jobs: EvaluationJob[] }> {
+  return request("/api/evaluation-jobs");
+}
+
 export function cancelEvaluationJob(jobId: string): Promise<EvaluationJob> {
   return request(`/api/evaluation-jobs/${jobId}/cancel`, { method: "POST" });
 }
