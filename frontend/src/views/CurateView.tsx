@@ -20,6 +20,7 @@ interface Props {
   onDeleteCrop: (cropId: string) => void;
   onMarkReady: (cropId: string) => void;
   onMarkReadyMany: (cropIds: string[]) => void;
+  onGridApply: (deleteIds: string[], keepIds: string[]) => void;
   onEvaluateCrop: (cropId: string) => void;
 }
 
@@ -40,6 +41,7 @@ export default function CurateView({
   onDeleteCrop,
   onMarkReady,
   onMarkReadyMany,
+  onGridApply,
   onEvaluateCrop,
 }: Props) {
   const pages = exp.pages;
@@ -59,16 +61,40 @@ export default function CurateView({
   const position = queue.length === 0 ? 0 : Math.min(queuePos, queue.length - 1);
   const current = queue[position] ?? null;
 
-  // Flagged crops on the page currently under review, for the bulk accept.
-  const currentPageQueueIds = useMemo(
-    () =>
-      current
-        ? queue
-            .filter((item) => item.pageId === current.pageId)
-            .map((item) => item.stamp.crop_id)
-        : [],
+  // Flagged crops on the page currently under review, for the bulk accept
+  // and the grid triage.
+  const currentPageQueue = useMemo(
+    () => (current ? queue.filter((item) => item.pageId === current.pageId) : []),
     [queue, current],
   );
+  const currentPageQueueIds = useMemo(
+    () => currentPageQueue.map((item) => item.stamp.crop_id),
+    [currentPageQueue],
+  );
+
+  // Grid triage: judge a whole page's flagged crops as thumbnails — click
+  // the bad ones, apply once (delete marked, accept the rest).
+  const [gridMode, setGridMode] = useState(false);
+  const [marked, setMarked] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setMarked(new Set());
+  }, [current?.pageId]);
+
+  const toggleMarked = useCallback((cropId: string) => {
+    setMarked((previous) => {
+      const next = new Set(previous);
+      if (next.has(cropId)) next.delete(cropId);
+      else next.add(cropId);
+      return next;
+    });
+  }, []);
+
+  const applyGrid = useCallback(() => {
+    const deleteIds = currentPageQueueIds.filter((cropId) => marked.has(cropId));
+    const keepIds = currentPageQueueIds.filter((cropId) => !marked.has(cropId));
+    setMarked(new Set());
+    onGridApply(deleteIds, keepIds);
+  }, [currentPageQueueIds, marked, onGridApply]);
 
   // Keep the canvas on the page of the crop under review.
   useEffect(() => {
@@ -186,21 +212,80 @@ export default function CurateView({
             >
               Delete page
             </button>
+            {currentPageQueue.length > 0 && (
+              <button
+                className={`btn ${gridMode ? "primary" : ""}`}
+                onClick={() => setGridMode((mode) => !mode)}
+                disabled={busy}
+              >
+                {gridMode ? "🗺 Page view" : `▦ Grid triage (${currentPageQueue.length})`}
+              </button>
+            )}
             <span className="grow" />
             <span className="hint">
-              {highlightCropId
-                ? "Highlighted box is the crop being reviewed."
-                : "Shaded = not covered by any crop. Click a box to inspect it."}
+              {gridMode && currentPageQueue.length > 0
+                ? "Click the bad crops, then apply — marked are deleted, the rest accepted."
+                : highlightCropId
+                  ? "Highlighted box is the crop being reviewed."
+                  : "Shaded = not covered by any crop. Click a box to inspect it."}
             </span>
           </div>
-          {currentPage && (
-            <PageViewer
-              page={currentPage}
-              selectedCropId={highlightCropId}
-              drawMode={drawMode}
-              onSelect={onSelectCrop}
-              onDrawComplete={onDrawComplete}
-            />
+          {gridMode && currentPageQueue.length > 0 ? (
+            <div className="triage">
+              <div className="triage-grid">
+                {currentPageQueue.map((item) => (
+                  <div
+                    key={item.stamp.crop_id}
+                    className={`tg-cell ${marked.has(item.stamp.crop_id) ? "marked" : ""}`}
+                  >
+                    <button
+                      className="tg-img"
+                      onClick={() => toggleMarked(item.stamp.crop_id)}
+                      title={
+                        item.stamp.warnings.length > 0
+                          ? item.stamp.warnings.join(", ").replaceAll("_", " ")
+                          : "no warnings"
+                      }
+                    >
+                      <img
+                        src={`${item.stamp.crop_image_url}?v=${imageVersion}`}
+                        alt={`Stamp ${item.stamp.crop_index}`}
+                        loading="lazy"
+                      />
+                      {marked.has(item.stamp.crop_id) && <span className="tg-x">✕</span>}
+                    </button>
+                    <button
+                      className="tg-fix"
+                      title="Fix this crop's box instead"
+                      onClick={() => onSelectCrop(item.stamp.crop_id)}
+                    >
+                      ⤢
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="triage-actions">
+                <button className="btn primary" onClick={applyGrid} disabled={busy}>
+                  Apply: delete {marked.size} · accept {currentPageQueue.length - marked.size}
+                </button>
+                {marked.size > 0 && (
+                  <button className="btn" onClick={() => setMarked(new Set())} disabled={busy}>
+                    Clear marks
+                  </button>
+                )}
+                <span className="hint">Applies to this page, then jumps to the next one.</span>
+              </div>
+            </div>
+          ) : (
+            currentPage && (
+              <PageViewer
+                page={currentPage}
+                selectedCropId={highlightCropId}
+                drawMode={drawMode}
+                onSelect={onSelectCrop}
+                onDrawComplete={onDrawComplete}
+              />
+            )
           )}
         </div>
 

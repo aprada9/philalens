@@ -159,6 +159,40 @@ export default function App() {
     [applyLocalPages, reportError],
   );
 
+  // One busy cycle for a grid-triage page apply: delete the marked crops,
+  // accept the rest, mirror both locally.
+  const handleGridApply = useCallback(
+    async (deleteIds: string[], keepIds: string[]) => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (deleteIds.length > 0) await api.deleteCrops(deleteIds);
+        if (keepIds.length > 0) await api.markCropsReady(keepIds);
+        const gone = new Set(deleteIds);
+        const ready = new Set(keepIds);
+        setDrawerCropId((current) => (current && gone.has(current) ? null : current));
+        setSelectedCropId((current) => (current && gone.has(current) ? null : current));
+        applyLocalPages((pages) =>
+          pages.map((page) => ({
+            ...page,
+            stamps: page.stamps
+              .filter((stamp) => !gone.has(stamp.crop_id))
+              .map((stamp) =>
+                ready.has(stamp.crop_id)
+                  ? { ...stamp, review_state: "unreviewed", warnings: [] }
+                  : stamp,
+              ),
+          })),
+        );
+      } catch (exc) {
+        reportError(exc);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyLocalPages, reportError],
+  );
+
   const mutate = useCallback(
     async (action: () => Promise<CollectionExport>, bumpImages = false) => {
       setBusy(true);
@@ -517,6 +551,7 @@ export default function App() {
               onDeleteCrop={(cropId) => void handleDeleteCrop(cropId)}
               onMarkReady={(cropId) => void handleMarkReady([cropId])}
               onMarkReadyMany={(cropIds) => void handleMarkReady(cropIds)}
+              onGridApply={(deleteIds, keepIds) => void handleGridApply(deleteIds, keepIds)}
               onEvaluateCrop={(cropId) => void handleEvaluate([cropId])}
             />
           )}

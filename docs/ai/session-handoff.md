@@ -2,7 +2,22 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 7): Queue Actions Made Fast at 8k Crops
+## Latest Session (2026-08-08, part 8): Grid Triage for Page-Level Curation
+
+Real curation feedback: most flagged crops are obvious Keeps, plus a batch
+of obvious Deletes (album borders/bindings detected as stamps). One-at-a-
+time queue review is the wrong shape for that, so Curate gained a grid
+triage mode: the canvas-panel toggle ("▦ Grid triage (N)") shows all of the
+current page's flagged crops as thumbnails; clicking marks a crop for
+deletion (red ✕); one Apply button deletes the marked and accepts the rest
+(single busy cycle via onGridApply → batch delete + batch mark-ready +
+local state mirror), then the queue auto-advances to the next page with
+flags. Each cell has a ⤢ shortcut to the crop editor for the few real
+fixes and a tooltip with the crop's warnings. Browser-verified against the
+live collection (2,606 flagged remained at the time; page grid rendered,
+mark toggle and Apply counts correct — not applied, user data untouched).
+
+## Earlier Session (2026-08-08, part 7): Queue Actions Made Fast at 8k Crops
 
 The user reported multi-second Keep/Fix/Delete actions in the review queue.
 Cause: every crop action returned the full collection export, and
