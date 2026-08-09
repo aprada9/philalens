@@ -704,3 +704,49 @@ def test_active_jobs_listing_for_page_reload_reattach(tmp_path: Path, monkeypatc
 
     # Finished jobs are not offered for re-attach.
     assert client.get("/api/evaluation-jobs").json() == {"jobs": []}
+
+
+def test_accept_all_crop_review(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+
+    import philalens.api
+    from dataclasses import replace as dc_replace
+    from philalens.models import REVIEW_NEEDS_CROP_REVIEW
+
+    importlib.reload(philalens.api)
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+
+    client = TestClient(philalens.api.app)
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    collection_id = upload.json()["collection"]["collection_id"]
+    crop_id = upload.json()["pages"][0]["stamps"][0]["crop_id"]
+
+    store = philalens.api.store
+    crop = store.get_crop(crop_id)
+    store.update_crop(
+        dc_replace(crop, review_state=REVIEW_NEEDS_CROP_REVIEW, warnings=["touches_image_edge"])
+    )
+
+    response = client.post(f"/api/collections/{collection_id}/accept-all-review")
+    assert response.status_code == 200
+    assert response.json() == {"accepted_crop_count": 1}
+
+    refreshed = client.get(f"/api/collections/{collection_id}").json()
+    stamp = refreshed["pages"][0]["stamps"][0]
+    assert stamp["review_state"] == "unreviewed"
+    assert stamp["warnings"] == []
+    assert refreshed["collection"]["needs_crop_review_count"] == 0
+
+    # Idempotent and safe on a clean collection.
+    assert client.post(f"/api/collections/{collection_id}/accept-all-review").json() == {
+        "accepted_crop_count": 0
+    }
+    assert client.post("/api/collections/col_missing/accept-all-review").status_code == 404

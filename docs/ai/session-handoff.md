@@ -2,7 +2,18 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09, part 7): Estimate Cost Confirm + Value Views + Cross-Run Targeting Fix
+## Latest Session (2026-08-09, part 8): Collection-Wide Accept-All for Curation
+
+Per-crop curation doesn't scale at ~2,500 remaining flags with an ~80% keep
+rate; the user explicitly accepts the trade-off (a few non-stamp crops
+reach evaluation, get bucketed as junk for fractions of a cent). Added
+`store.accept_all_crop_review` (single UPDATE),
+`POST /api/collections/{id}/accept-all-review`, and a "✓✓✓ Accept all N in
+the collection" button in the Curate queue with a confirm dialog spelling
+out the trade-off and a notice pointing at the "Not analyzed yet" scope.
+Bad crops remain deletable from the Stamps view afterwards.
+
+## Earlier Session (2026-08-09, part 7): Estimate Cost Confirm + Value Views + Cross-Run Targeting Fix
 
 User asks: batch AI-estimate with a pre-run cost estimate, and estimates
 visible/filterable in the gallery. Delivered:

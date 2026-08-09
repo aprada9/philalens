@@ -125,6 +125,47 @@ export default function App() {
     [applyLocalPages, reportError],
   );
 
+  const handleAcceptAllReview = useCallback(async () => {
+    if (!exp) return;
+    const pending = exp.collection.needs_crop_review_count;
+    if (
+      !window.confirm(
+        `Accept all ${pending} crops still waiting for review, across the whole collection?\n\n` +
+          "Trade-off: a few non-stamp crops will reach evaluation (a fraction of a cent " +
+          "each — the AI marks them as junk), in exchange for skipping the manual keeps. " +
+          "You can still delete bad crops from the Stamps view afterwards.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { accepted_crop_count } = await api.acceptAllCropReview(
+        exp.collection.collection_id,
+      );
+      applyLocalPages((pages) =>
+        pages.map((page) => ({
+          ...page,
+          stamps: page.stamps.map((stamp) =>
+            stamp.review_state === "needs_crop_review"
+              ? { ...stamp, review_state: "unreviewed", warnings: [] }
+              : stamp,
+          ),
+        })),
+      );
+      setNotice(
+        `Accepted ${accepted_crop_count} crops — they are now eligible for evaluation ` +
+          'via the "Not analyzed yet" scope.',
+      );
+      void refreshCollections();
+    } catch (exc) {
+      reportError(exc);
+    } finally {
+      setBusy(false);
+    }
+  }, [exp, applyLocalPages, refreshCollections, reportError]);
+
   const handleDeleteCrop = useCallback(
     async (cropId: string) => {
       setBusy(true);
@@ -634,6 +675,7 @@ export default function App() {
               onMarkReady={(cropId) => void handleMarkReady([cropId])}
               onMarkReadyMany={(cropIds) => void handleMarkReady(cropIds)}
               onGridApply={(deleteIds, keepIds) => void handleGridApply(deleteIds, keepIds)}
+              onAcceptAllReview={() => void handleAcceptAllReview()}
               onEvaluateCrop={(cropId) => void handleEvaluate([cropId])}
             />
           )}

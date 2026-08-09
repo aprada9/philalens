@@ -95,6 +95,12 @@ export function markCropsReady(cropIds: string[]): Promise<{ ready_crop_ids: str
   return request("/api/crops/mark-ready", jsonInit("POST", { crop_ids: cropIds }));
 }
 
+export function acceptAllCropReview(
+  collectionId: string,
+): Promise<{ accepted_crop_count: number }> {
+  return request(`/api/collections/${collectionId}/accept-all-review`, { method: "POST" });
+}
+
 export function createManualCrop(
   pageId: string,
   bbox: BBox,

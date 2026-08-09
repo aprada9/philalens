@@ -21,6 +21,7 @@ interface Props {
   onMarkReady: (cropId: string) => void;
   onMarkReadyMany: (cropIds: string[]) => void;
   onGridApply: (deleteIds: string[], keepIds: string[]) => void;
+  onAcceptAllReview: () => void;
   onEvaluateCrop: (cropId: string) => void;
 }
 
@@ -42,6 +43,7 @@ export default function CurateView({
   onMarkReady,
   onMarkReadyMany,
   onGridApply,
+  onAcceptAllReview,
   onEvaluateCrop,
 }: Props) {
   const pages = exp.pages;
@@ -383,6 +385,17 @@ export default function CurateView({
                   title="Keeps every crop still flagged on this page — check the page canvas first"
                 >
                   ✓✓ Accept all {currentPageQueueIds.length} remaining on this page
+                </button>
+              )}
+              {queue.length > 1 && (
+                <button
+                  className="btn"
+                  style={{ marginTop: 8 }}
+                  onClick={onAcceptAllReview}
+                  disabled={busy}
+                  title="Keeps every crop still flagged across the WHOLE collection — a few bad crops will pass through to evaluation"
+                >
+                  ✓✓✓ Accept all {queue.length} in the collection
                 </button>
               )}
             </>

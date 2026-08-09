@@ -939,6 +939,21 @@ def create_manual_crop(page_id: str, create: CropCreate) -> dict[str, object]:
     return export
 
 
+@app.post("/api/collections/{collection_id}/accept-all-review")
+def accept_all_crop_review(collection_id: str) -> dict[str, object]:
+    """Mark every review-pending crop in the collection as kept.
+
+    A deliberate throughput/precision trade-off for large collections: a few
+    non-stamp crops will reach evaluation (fractions of a cent each, and the
+    vision pass buckets them as junk), in exchange for skipping thousands of
+    manual keeps.
+    """
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    accepted = store.accept_all_crop_review(collection_id)
+    return {"accepted_crop_count": accepted}
+
+
 @app.post("/api/collections/{collection_id}/relax-crop-review")
 def relax_crop_review(collection_id: str) -> dict[str, object]:
     """Unflag review-pending crops that pass the current confidence bar.

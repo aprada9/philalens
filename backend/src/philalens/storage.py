@@ -16,6 +16,7 @@ from .models import (
     EVALUATION_STATUS_PENDING,
     EVALUATION_STATUS_RUNNING,
     REVIEW_NEEDS_CROP_REVIEW,
+    REVIEW_UNREVIEWED,
     CatalogCandidateRecord,
     CollectionRecord,
     EvaluationRunRecord,
@@ -457,6 +458,19 @@ class PhilalensStore:
                 ),
             )
         return crop
+
+    def accept_all_crop_review(self, collection_id: str) -> int:
+        """Mark every review-pending crop in the collection as reviewed."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE crops SET review_state = ?, warnings_json = '[]'
+                WHERE review_state = ?
+                  AND page_id IN (SELECT page_id FROM pages WHERE collection_id = ?)
+                """,
+                (REVIEW_UNREVIEWED, REVIEW_NEEDS_CROP_REVIEW, collection_id),
+            )
+        return cursor.rowcount
 
     def delete_crop(self, crop_id: str) -> bool:
         with self._connect() as connection:
