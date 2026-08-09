@@ -71,6 +71,33 @@ export function topCandidate(stamp: Stamp) {
   );
 }
 
+export interface StampValueInfo {
+  low: number;
+  high: number;
+  currency: string;
+  source: "owner" | "ai" | "evidence";
+}
+
+/** The stamp's current value range, if any, with its provenance. */
+export function stampValue(stamp: Stamp): StampValueInfo | null {
+  const valuation = stamp.valuation;
+  if (valuation.estimated_value_low === null || valuation.estimated_value_high === null) {
+    return null;
+  }
+  const assumptions = valuation.assumptions ?? [];
+  const source = assumptions.some((item) => item.startsWith("Owner-reviewed range"))
+    ? "owner"
+    : assumptions.some((item) => item.startsWith("AI-estimated range"))
+      ? "ai"
+      : "evidence";
+  return {
+    low: valuation.estimated_value_low,
+    high: valuation.estimated_value_high,
+    currency: valuation.currency,
+    source,
+  };
+}
+
 export function stampHeadline(stamp: Stamp): { country: string | null; title: string } {
   const candidate = topCandidate(stamp);
   if (candidate) {

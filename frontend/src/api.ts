@@ -158,6 +158,16 @@ export function aiEstimateCrop(cropId: string): Promise<CollectionExport> {
   return request(`/api/crops/${cropId}/ai-estimate`, { method: "POST" });
 }
 
+export function estimateAiEstimateCost(
+  collectionId: string,
+  cropIds?: string[],
+): Promise<CostEstimate> {
+  return request(
+    `/api/collections/${collectionId}/ai-estimate/cost-estimate`,
+    jsonInit("POST", { crop_ids: cropIds ?? [] }),
+  );
+}
+
 export function startAiEstimateJob(
   collectionId: string,
   cropIds?: string[],

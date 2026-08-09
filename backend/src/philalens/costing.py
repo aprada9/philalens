@@ -151,6 +151,39 @@ def estimate_openai_vision_run_cost(
     }
 
 
+# Rough per-call tokens for a value-estimation call: prompt + identity/
+# evidence context plus a low-detail image, and a short structured answer.
+_AI_ESTIMATE_INPUT_TOKENS_PER_CALL = 1200
+_AI_ESTIMATE_OUTPUT_TOKENS_PER_CALL = 220
+
+
+def estimate_ai_value_run_cost(*, model: str | None, call_count: int) -> dict[str, object]:
+    usage = {
+        "input_tokens": max(0, call_count) * _AI_ESTIMATE_INPUT_TOKENS_PER_CALL,
+        "output_tokens": max(0, call_count) * _AI_ESTIMATE_OUTPUT_TOKENS_PER_CALL,
+        "cached_input_tokens": 0,
+    }
+    usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+    cost = openai_cost_for_usage(model, usage)
+    return {
+        "provider": "openai",
+        "model": model,
+        "pricing_model": cost.get("pricing_model"),
+        "currency": "USD",
+        "estimate_available": cost.get("cost_available", False),
+        "estimate_method": "ai_estimate_token_heuristic_v1",
+        "crop_count": max(0, call_count),
+        "billable_api_call_count": max(0, call_count),
+        "skipped_crop_review_count": 0,
+        "estimated_input_tokens": usage["input_tokens"],
+        "estimated_output_tokens": usage["output_tokens"],
+        "estimated_total_tokens": usage["total_tokens"],
+        "estimated_total_cost_usd": cost.get("total_cost_usd"),
+        "pricing": cost.get("pricing"),
+        "note": ROUGH_ESTIMATE_NOTE,
+    }
+
+
 def non_openai_cost_estimate(
     *,
     provider: str,

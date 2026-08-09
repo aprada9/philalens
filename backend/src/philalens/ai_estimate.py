@@ -21,7 +21,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from .market_evidence import ATTENTION_BUCKETS, MarketEvidenceError, _latest_valuations_per_crop
+from .market_evidence import (
+    ATTENTION_BUCKETS,
+    MarketEvidenceError,
+    collection_latest_valuations,
+)
 from .models import (
     CatalogCandidateRecord,
     SourceEvidenceRecord,
@@ -169,9 +173,9 @@ def estimate_flagged_values(
         return None
 
     run = store.get_latest_evaluation_run(collection_id)
-    if run is None or run.status != "completed":
+    if run is None:
         raise MarketEvidenceError(
-            "Run a Tier 1 evaluation first: AI estimates attach to the latest completed run."
+            "Run a Tier 1 evaluation first: AI estimates attach to evaluated stamps."
         )
 
     crops = {
@@ -179,6 +183,9 @@ def estimate_flagged_values(
         for page in store.list_pages(collection_id)
         for crop in store.list_crops_for_page(page.page_id)
     }
+    # Each crop's records live in whichever run last evaluated it; targeting
+    # and lookups follow that per-crop overlay, never just the latest run.
+    overlay = collection_latest_valuations(store, collection_id)
     if crop_ids is not None:
         missing = [crop_id for crop_id in crop_ids if crop_id not in crops]
         if missing:
@@ -186,9 +193,9 @@ def estimate_flagged_values(
         targets = [crops[crop_id] for crop_id in crop_ids]
     else:
         targets = [
-            crops[valuation.crop_id]
-            for valuation in _latest_valuations_per_crop(store, run.run_id)
-            if valuation.value_bucket in ATTENTION_BUCKETS and valuation.crop_id in crops
+            crops[crop_id]
+            for crop_id, (_run_id, valuation) in overlay.items()
+            if valuation.value_bucket in ATTENTION_BUCKETS and crop_id in crops
         ]
 
     estimated = 0
@@ -196,10 +203,16 @@ def estimate_flagged_values(
     for index, crop in enumerate(targets, start=1):
         if progress_callback is not None:
             progress_callback(index, len(targets), crop)
-        previous = store.get_stamp_valuation_for_crop(run.run_id, crop.crop_id)
-        candidates = store.list_catalog_candidates_for_crop(run.run_id, crop.crop_id)
-        observation = store.get_stamp_observation_for_crop(run.run_id, crop.crop_id)
-        evidence = store.list_source_evidence_for_crop(run.run_id, crop.crop_id)
+        crop_state = overlay.get(crop.crop_id)
+        if crop_state is None:
+            errors.append(
+                f"{crop.crop_id}: no Tier 1 evaluation yet; evaluate this stamp first."
+            )
+            continue
+        crop_run_id, previous = crop_state
+        candidates = store.list_catalog_candidates_for_crop(crop_run_id, crop.crop_id)
+        observation = store.get_stamp_observation_for_crop(crop_run_id, crop.crop_id)
+        evidence = store.list_source_evidence_for_crop(crop_run_id, crop.crop_id)
         context = _estimation_context(candidates, observation, evidence)
 
         try:
@@ -209,7 +222,7 @@ def estimate_flagged_values(
             continue
 
         store.add_stamp_valuation(
-            _estimated_valuation(run.run_id, crop, previous, payload)
+            _estimated_valuation(crop_run_id, crop, previous, payload)
         )
         estimated += 1
 
@@ -279,8 +292,10 @@ def _estimated_valuation(
     action = str(payload.get("recommended_action", "check_sold_listings"))
 
     assumptions = [
-        f"{AI_ESTIMATE_PREFIX}: model prior informed by catalog knowledge and the "
-        "gathered market context; not evidence-backed and not owner-reviewed.",
+        (
+            f"{AI_ESTIMATE_PREFIX}: model prior informed by catalog knowledge and the "
+            "gathered market context; not evidence-backed and not owner-reviewed."
+        ),
         f"AI rationale: {str(payload.get('rationale', '')).strip()}",
         f"Rarity check: {str(payload.get('rarity_notes', '')).strip()}",
     ]

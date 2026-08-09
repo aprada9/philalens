@@ -2,7 +2,32 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09, part 6): Open-Source Portfolio Prep
+## Latest Session (2026-08-09, part 7): Estimate Cost Confirm + Value Views + Cross-Run Targeting Fix
+
+User asks: batch AI-estimate with a pre-run cost estimate, and estimates
+visible/filterable in the gallery. Delivered:
+
+- `POST /api/collections/{id}/ai-estimate/cost-estimate` (own token
+  heuristic in costing: 1200 in / 220 out per call); the Overview batch
+  button now shows a confirm dialog (live-verified: 51 flagged ≈ $0.04 at
+  gpt-5.4-mini, which the user selected in Settings).
+- Gallery cards show the value range with provenance (✓ owner / 🤖 AI /
+  ◆ evidence, color-coded); new sort "Estimated value, highest first"
+  (sorts by range high, currency-blind, no-range last); status filter
+  gains "With value estimate" and "Owner-reviewed value".
+- CRITICAL FIX found via live check: batch targeting for evidence/estimate
+  jobs read only the LATEST run, so after any scoped re-run the batches
+  would process ~1 stamp instead of all 51 flagged, and records written to
+  the latest run for crops evaluated elsewhere became orphans (this
+  produced the user's "no identity candidate" confusion). New
+  `collection_latest_valuations` overlay (crop → its own run + newest
+  valuation) now drives targeting, lookups, and writes in
+  market_evidence, ai_estimate, and the cost endpoint. Three orphaned
+  valuations were deleted from the live DB (incl. the agent's earlier
+  smoke-test estimate — re-runnable). Covered by
+  test_batch_targets_flagged_crops_across_scoped_runs.
+
+## Earlier Session (2026-08-09, part 6): Open-Source Portfolio Prep
 
 The user decided (via explicit choices): real-collection screenshots, MIT
 license, highlight the AI-agent development workflow, English-only README.

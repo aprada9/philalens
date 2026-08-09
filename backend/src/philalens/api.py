@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .config import PROJECT_ROOT, get_settings
 from .costing import (
+    estimate_ai_value_run_cost,
     estimate_openai_vision_run_cost,
     non_openai_cost_estimate,
     vision_model_options,
@@ -24,7 +25,12 @@ from .ai_estimate import build_value_estimator_from_settings, estimate_flagged_v
 from .evaluation import EvaluationCancelledError, evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
-from .market_evidence import MarketEvidenceError, gather_market_evidence
+from .market_evidence import (
+    ATTENTION_BUCKETS,
+    MarketEvidenceError,
+    collection_latest_valuations,
+    gather_market_evidence,
+)
 from .models import (
     REVIEW_NEEDS_CROP_REVIEW,
     REVIEW_UNREVIEWED,
@@ -557,6 +563,37 @@ def ai_estimate_crop(crop_id: str) -> dict[str, object]:
     if export is None:
         raise HTTPException(status_code=500, detail="Collection was not found after estimate.")
     return export
+
+
+@app.post("/api/collections/{collection_id}/ai-estimate/cost-estimate")
+def estimate_ai_estimate_cost(
+    collection_id: str, selection: CropSelection | None = None
+) -> dict[str, object]:
+    """Rough pre-run cost for AI value estimates over the flagged stamps."""
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    if selection and selection.crop_ids:
+        call_count = len(selection.crop_ids)
+    else:
+        call_count = sum(
+            1
+            for _run_id, valuation in collection_latest_valuations(
+                store, collection_id
+            ).values()
+            if valuation.value_bucket in ATTENTION_BUCKETS
+        )
+
+    settings = get_settings()
+    if (settings.vision_provider or "").strip().lower() != "openai":
+        return non_openai_cost_estimate(
+            provider=settings.vision_provider or "none",
+            crop_count=call_count,
+            billable_api_call_count=0,
+        )
+    return estimate_ai_value_run_cost(
+        model=settings.openai_vision_model, call_count=call_count
+    )
 
 
 @app.post("/api/collections/{collection_id}/ai-estimate/start")

@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BUCKETS, bucketMeta, stampBucket, stampHeadline, topCandidate } from "../buckets";
+import {
+  BUCKETS,
+  bucketMeta,
+  stampBucket,
+  stampHeadline,
+  stampValue,
+  topCandidate,
+} from "../buckets";
 import type { CollectionExport, Stamp } from "../types";
 
-export type StampSort = "attention" | "page" | "confidence" | "year_asc" | "year_desc";
+export type StampSort =
+  | "attention"
+  | "page"
+  | "confidence"
+  | "year_asc"
+  | "year_desc"
+  | "value_desc";
+
+type StatusFilter = "all" | "analyzed" | "not_analyzed" | "has_value" | "owner_reviewed";
 
 interface Props {
   exp: CollectionExport;
@@ -63,7 +78,7 @@ export default function StampsView({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<StampSort>("attention");
   const [countryFilter, setCountryFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "analyzed" | "not_analyzed">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [yearRange, setYearRange] = useState<[number, number] | null>(null);
 
   const pageByCrop = useMemo(() => {
@@ -126,6 +141,10 @@ export default function StampsView({
       if (bucketFilter && stampBucket(stamp) !== bucketFilter) return false;
       if (statusFilter === "analyzed" && !isAnalyzed(stamp)) return false;
       if (statusFilter === "not_analyzed" && isAnalyzed(stamp)) return false;
+      if (statusFilter === "has_value" && stampValue(stamp) === null) return false;
+      if (statusFilter === "owner_reviewed" && stampValue(stamp)?.source !== "owner") {
+        return false;
+      }
       const candidate = topCandidate(stamp);
       if (countryFilter && candidate?.issuer !== countryFilter) return false;
       if (yearRange) {
@@ -166,6 +185,12 @@ export default function StampsView({
     } else if (sort === "year_desc") {
       list.sort(
         (a, b) => (topCandidate(b)?.year ?? -1) - (topCandidate(a)?.year ?? -1),
+      );
+    } else if (sort === "value_desc") {
+      // Sorts by the range's high end regardless of currency — good enough
+      // for surfacing the valuable stamps; stamps without a range sort last.
+      list.sort(
+        (a, b) => (stampValue(b)?.high ?? -1) - (stampValue(a)?.high ?? -1),
       );
     } else {
       list.sort(
@@ -211,14 +236,14 @@ export default function StampsView({
         <span className="grow" />
         <select
           value={statusFilter}
-          onChange={(event) =>
-            setStatusFilter(event.target.value as "all" | "analyzed" | "not_analyzed")
-          }
-          title="Filter by AI analysis status"
+          onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          title="Filter by analysis / valuation status"
         >
           <option value="all">All statuses</option>
           <option value="analyzed">Analyzed</option>
           <option value="not_analyzed">Not analyzed yet</option>
+          <option value="has_value">With value estimate</option>
+          <option value="owner_reviewed">Owner-reviewed value</option>
         </select>
         <select
           value={countryFilter}
@@ -245,6 +270,7 @@ export default function StampsView({
           <option value="confidence">Sort: Identity confidence</option>
           <option value="year_asc">Sort: Year, oldest first</option>
           <option value="year_desc">Sort: Year, newest first</option>
+          <option value="value_desc">Sort: Estimated value, highest first</option>
         </select>
       </div>
 
@@ -257,6 +283,7 @@ export default function StampsView({
           {visible.map((stamp) => {
             const headline = stampHeadline(stamp);
             const candidate = topCandidate(stamp);
+            const value = stampValue(stamp);
             return (
               <button
                 key={stamp.crop_id}
@@ -284,6 +311,21 @@ export default function StampsView({
                     </span>
                     {pill(stampBucket(stamp))}
                   </div>
+                  {value && (
+                    <div
+                      className={`card-value ${value.source}`}
+                      title={
+                        value.source === "owner"
+                          ? "Owner-reviewed range from sold comparisons"
+                          : value.source === "ai"
+                            ? "AI-estimated range — unverified prior"
+                            : "Evidence-backed range from realized sales"
+                      }
+                    >
+                      {value.source === "owner" ? "✓" : value.source === "ai" ? "🤖" : "◆"}{" "}
+                      {value.low}–{value.high} {value.currency}
+                    </div>
+                  )}
                 </div>
               </button>
             );

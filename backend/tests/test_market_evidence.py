@@ -292,3 +292,53 @@ def test_regathering_replaces_previous_evidence(tmp_path: Path) -> None:
         store, collection.collection_id, [FailingAdapter()], crop_ids=["crop_b"]
     )
     assert len(store.list_source_evidence_for_crop(run.run_id, "crop_b")) == 2
+
+
+def test_batch_targets_flagged_crops_across_scoped_runs(tmp_path: Path) -> None:
+    """Flagged crops from EARLIER runs must be targeted and written to their
+    own runs, even when a newer scoped run exists that doesn't cover them."""
+    store, collection, run1 = _setup_collection(tmp_path, {"crop_old": "investigate"})
+
+    # A newer scoped run covering only a different crop.
+    page_id = store.list_pages(collection.collection_id)[0].page_id
+    store.add_crop(
+        StampCrop(
+            crop_id="crop_new",
+            page_id=page_id,
+            crop_index=99,
+            bbox_xywh=(500, 10, 90, 110),
+            crop_path=str(tmp_path / "crop_new.jpg"),
+            segmentation_confidence=0.9,
+        )
+    )
+    run2 = store.create_evaluation_run(
+        collection_id=collection.collection_id,
+        pipeline_version="tier1-identification-v2",
+        status="completed",
+        enabled_sources=[],
+        settings={},
+    )
+    store.add_stamp_valuation(
+        StampValuationRecord(
+            valuation_id="val_new",
+            run_id=run2.run_id,
+            crop_id="crop_new",
+            identity_confidence=0.7,
+            value_bucket="possibly_interesting",
+        )
+    )
+
+    adapter = FakeAdapter("wikidata", [_reference_item()])
+    gather_market_evidence(store, collection.collection_id, [adapter])
+
+    # Both flagged crops were processed...
+    assert len(adapter.queries) >= 1  # crop_new has no candidates -> gap path
+    # ...and each crop's new valuation lives in ITS OWN run.
+    old_valuation = store.get_stamp_valuation_for_crop(run1.run_id, "crop_old")
+    assert old_valuation.valuation_id != "val_crop_old"  # updated in run1
+    assert len(old_valuation.evidence_ids) == 1
+    new_valuation = store.get_stamp_valuation_for_crop(run2.run_id, "crop_new")
+    assert new_valuation.valuation_id != "val_new"  # updated in run2
+    # No records leaked into the wrong run.
+    assert store.get_stamp_valuation_for_crop(run2.run_id, "crop_old") is None
+    assert store.list_source_evidence_for_run(run2.run_id) == []

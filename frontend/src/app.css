@@ -1329,3 +1329,21 @@ kbd {
   background: var(--raised);
   font-size: 13px;
 }
+
+.card-value {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.card-value.owner {
+  color: var(--bucket-common);
+}
+
+.card-value.ai {
+  color: var(--bucket-interesting);
+}
+
+.card-value.evidence {
+  color: var(--accent);
+}

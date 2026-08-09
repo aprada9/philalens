@@ -466,6 +466,20 @@ export default function App() {
     if (!exp) return;
     setError(null);
     try {
+      const estimate = await api.estimateAiEstimateCost(exp.collection.collection_id);
+      const costLabel =
+        estimate.estimated_total_cost_usd !== null
+          ? `~$${estimate.estimated_total_cost_usd.toFixed(2)}`
+          : "an unknown amount";
+      if (
+        !window.confirm(
+          `AI value estimates for ${estimate.billable_api_call_count} flagged stamps ` +
+            `will make ${estimate.billable_api_call_count} AI calls, costing ${costLabel}.\n\n` +
+            "Estimates are unverified priors, clearly labeled. Start?",
+        )
+      ) {
+        return;
+      }
       startJobPolling(await api.startAiEstimateJob(exp.collection.collection_id));
     } catch (exc) {
       reportError(exc);

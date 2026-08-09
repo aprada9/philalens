@@ -44,6 +44,22 @@ class MarketEvidenceError(RuntimeError):
     """Raised when an evidence pass cannot start."""
 
 
+def collection_latest_valuations(
+    store: PhilalensStore, collection_id: str
+) -> dict[str, tuple[str, StampValuationRecord]]:
+    """Newest valuation per crop across ALL runs, with the run that holds it.
+
+    Scoped runs each cover part of the collection, so "the latest run" is the
+    wrong lens for finding flagged crops or a crop's current state — a crop's
+    records live in whichever run last evaluated it.
+    """
+    latest: dict[str, tuple[str, StampValuationRecord]] = {}
+    for run in reversed(store.list_evaluation_runs(collection_id)):  # oldest first
+        for valuation in store.list_stamp_valuations_for_run(run.run_id):
+            latest[valuation.crop_id] = (run.run_id, valuation)
+    return latest
+
+
 def gather_market_evidence(
     store: PhilalensStore,
     collection_id: str,
@@ -56,10 +72,9 @@ def gather_market_evidence(
         return None
 
     run = store.get_latest_evaluation_run(collection_id)
-    if run is None or run.status != "completed":
+    if run is None:
         raise MarketEvidenceError(
-            "Run a Tier 1 evaluation first: market evidence attaches to the latest "
-            "completed evaluation run."
+            "Run a Tier 1 evaluation first: market evidence attaches to evaluated stamps."
         )
 
     crops = {
@@ -67,6 +82,7 @@ def gather_market_evidence(
         for page in store.list_pages(collection_id)
         for crop in store.list_crops_for_page(page.page_id)
     }
+    overlay = collection_latest_valuations(store, collection_id)
     if crop_ids is not None:
         missing = [crop_id for crop_id in crop_ids if crop_id not in crops]
         if missing:
@@ -74,9 +90,9 @@ def gather_market_evidence(
         targets = [crops[crop_id] for crop_id in crop_ids]
     else:
         targets = [
-            crops[valuation.crop_id]
-            for valuation in _latest_valuations_per_crop(store, run.run_id)
-            if valuation.value_bucket in ATTENTION_BUCKETS and valuation.crop_id in crops
+            crops[crop_id]
+            for crop_id, (_run_id, valuation) in overlay.items()
+            if valuation.value_bucket in ATTENTION_BUCKETS and crop_id in crops
         ]
 
     errors: list[str] = list(run.errors)
@@ -84,7 +100,16 @@ def gather_market_evidence(
     for index, crop in enumerate(targets, start=1):
         if progress_callback is not None:
             progress_callback(index, len(targets), crop)
-        evidence_total += _gather_for_crop(store, run, crop, adapters, errors)
+        crop_state = overlay.get(crop.crop_id)
+        if crop_state is None:
+            errors.append(
+                f"{crop.crop_id}: no Tier 1 evaluation yet; evaluate this stamp first."
+            )
+            continue
+        crop_run_id, previous = crop_state
+        evidence_total += _gather_for_crop(
+            store, crop_run_id, previous, crop, adapters, errors
+        )
 
     enabled_sources = sorted(
         {*run.enabled_sources, *(adapter.source_name for adapter in adapters)}
@@ -119,20 +144,21 @@ def gather_market_evidence(
 
 def _gather_for_crop(
     store: PhilalensStore,
-    run: EvaluationRunRecord,
+    run_id: str,
+    previous: StampValuationRecord | None,
     crop: StampCrop,
     adapters: list[SourceAdapter],
     errors: list[str],
 ) -> int:
-    previous = store.get_stamp_valuation_for_crop(run.run_id, crop.crop_id)
-    candidates = store.list_catalog_candidates_for_crop(run.run_id, crop.crop_id)
+    """Gather evidence for one crop against ITS run (where its records live)."""
+    candidates = store.list_catalog_candidates_for_crop(run_id, crop.crop_id)
     top_candidate = min(candidates, key=lambda candidate: candidate.rank, default=None)
     query = _query_from_candidate(top_candidate)
 
     if not query.has_identity():
         store.add_stamp_valuation(
             _updated_valuation(
-                run.run_id,
+                run_id,
                 crop,
                 previous,
                 evidence_records=[],
@@ -156,18 +182,18 @@ def _gather_for_crop(
     # Re-gathering replaces the crop's previous evidence instead of piling
     # up duplicates — but never wipe existing evidence over a failed pass.
     if gathered_items or not failed_sources:
-        store.delete_source_evidence_for_crop(run.run_id, crop.crop_id)
+        store.delete_source_evidence_for_crop(run_id, crop.crop_id)
 
     evidence_records = [
         store.add_source_evidence(
-            _evidence_record(run.run_id, crop.crop_id, top_candidate, item)
+            _evidence_record(run_id, crop.crop_id, top_candidate, item)
         )
         for item in gathered_items
     ]
 
     store.add_stamp_valuation(
         _updated_valuation(
-            run.run_id,
+            run_id,
             crop,
             previous,
             evidence_records=evidence_records,
@@ -175,15 +201,6 @@ def _gather_for_crop(
         )
     )
     return len(evidence_records)
-
-
-def _latest_valuations_per_crop(
-    store: PhilalensStore, run_id: str
-) -> list[StampValuationRecord]:
-    latest: dict[str, StampValuationRecord] = {}
-    for valuation in store.list_stamp_valuations_for_run(run_id):
-        latest[valuation.crop_id] = valuation
-    return list(latest.values())
 
 
 def _query_from_candidate(candidate: CatalogCandidateRecord | None) -> EvidenceQuery:

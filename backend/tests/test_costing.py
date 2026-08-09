@@ -72,3 +72,14 @@ def test_vision_model_options_include_estimates_and_recommendation() -> None:
     assert 0 < default["estimated_usd_per_100_stamps"] < 1
     # Every curated option must have a price in the rates table.
     assert all(option["estimated_usd_per_100_stamps"] is not None for option in options)
+
+
+def test_ai_estimate_cost_heuristic() -> None:
+    from philalens.costing import estimate_ai_value_run_cost
+
+    estimate = estimate_ai_value_run_cost(model="gpt-4.1-mini", call_count=50)
+    assert estimate["billable_api_call_count"] == 50
+    assert estimate["estimate_available"] is True
+    cost = estimate["estimated_total_cost_usd"]
+    assert isinstance(cost, float)
+    assert 0 < cost < 0.5  # ~50 low-detail estimation calls stay in cents territory
