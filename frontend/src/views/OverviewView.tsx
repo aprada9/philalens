@@ -395,6 +395,20 @@ export default function OverviewView({
               <a href="/api/backup.sqlite">
                 <button className="btn">Download backup</button>
               </a>
+              <a
+                href={`/api/collections/${exp.collection.collection_id}/report.html`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <button className="btn">📄 Collection report</button>
+              </a>
+              <a
+                href={`/api/collections/${exp.collection.collection_id}/recapture-kit.html`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <button className="btn">📷 Recapture kit</button>
+              </a>
               <button className="btn danger" onClick={onDeleteCollection} disabled={busy}>
                 Delete collection
               </button>

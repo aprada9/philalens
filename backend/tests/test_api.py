@@ -592,3 +592,82 @@ def test_relax_crop_review_unflags_confident_clean_crops(tmp_path: Path, monkeyp
     assert states["crop_warned"] == "needs_crop_review"
 
     assert client.post("/api/collections/col_missing/relax-crop-review").status_code == 404
+
+
+def test_owner_valuation_recapture_and_reports(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("PHILALENS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PHILALENS_VISION_PROVIDER", "none")
+
+    import philalens.api
+
+    importlib.reload(philalens.api)
+
+    image = np.zeros((700, 900, 3), dtype=np.uint8)
+    cv2.rectangle(image, (80, 90), (270, 360), (240, 240, 240), -1)
+    ok, encoded = cv2.imencode(".png", image)
+    assert ok
+
+    client = TestClient(philalens.api.app)
+    upload = client.post(
+        "/api/collections",
+        files=[("files", ("page.png", encoded.tobytes(), "image/png"))],
+    )
+    collection_id = upload.json()["collection"]["collection_id"]
+    crop_id = upload.json()["pages"][0]["stamps"][0]["crop_id"]
+
+    # A range needs a prior evaluation to attach to.
+    early = client.post(
+        f"/api/crops/{crop_id}/valuation",
+        json={"estimated_value_low": 3, "estimated_value_high": 8},
+    )
+    assert early.status_code == 400
+
+    assert client.post(f"/api/collections/{collection_id}/evaluate").status_code == 200
+
+    bad_range = client.post(
+        f"/api/crops/{crop_id}/valuation",
+        json={"estimated_value_low": 9, "estimated_value_high": 8},
+    )
+    assert bad_range.status_code == 400
+
+    set_range = client.post(
+        f"/api/crops/{crop_id}/valuation",
+        json={
+            "estimated_value_low": 3,
+            "estimated_value_high": 8,
+            "currency": "eur",
+            "note": "5 sold comps, used condition",
+        },
+    )
+    assert set_range.status_code == 200
+    stamp = set_range.json()["pages"][0]["stamps"][0]
+    assert stamp["valuation"]["estimated_value_low"] == 3
+    assert stamp["valuation"]["estimated_value_high"] == 8
+    assert stamp["valuation"]["currency"] == "EUR"
+    assert any(
+        item.startswith("Owner-reviewed range") for item in stamp["valuation"]["assumptions"]
+    )
+    assert any("5 sold comps" in item for item in stamp["valuation"]["assumptions"])
+
+    csv_payload = client.get(f"/api/collections/{collection_id}/export.csv").text
+    assert "owner_reviewed" in csv_payload.splitlines()[0]
+    assert "True" in csv_payload
+
+    # Recapture: replace the crop image with a better photo.
+    replace_response = client.post(
+        f"/api/crops/{crop_id}/image",
+        files=[("file", ("macro.png", encoded.tobytes(), "image/png"))],
+    )
+    assert replace_response.status_code == 200
+    assert replace_response.json()["crop"]["warnings"] == ["recaptured_image"]
+    assert replace_response.json()["crop"]["review_state"] == "unreviewed"
+
+    report = client.get(f"/api/collections/{collection_id}/report.html")
+    assert report.status_code == 200
+    assert "not a formal appraisal" in report.text
+    assert "3–8 EUR" in report.text
+
+    kit = client.get(f"/api/collections/{collection_id}/recapture-kit.html")
+    assert kit.status_code == 200
+    assert "Recapture kit" in kit.text
+    assert client.get("/api/collections/col_missing/report.html").status_code == 404

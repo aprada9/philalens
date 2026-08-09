@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import Lock, Thread
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from PIL import Image
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -23,7 +24,18 @@ from .evaluation import EvaluationCancelledError, evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
 from .market_evidence import MarketEvidenceError, gather_market_evidence
-from .models import REVIEW_NEEDS_CROP_REVIEW, REVIEW_UNREVIEWED, PageImageRecord, StampCrop
+from .models import (
+    REVIEW_NEEDS_CROP_REVIEW,
+    REVIEW_UNREVIEWED,
+    PageImageRecord,
+    StampCrop,
+    StampValuationRecord,
+)
+from .report import (
+    OWNER_REVIEWED_PREFIX,
+    build_collection_report_html,
+    build_recapture_kit_html,
+)
 from .segmentation import REVIEW_CONFIDENCE_BAR, detect_stamp_crops, recrop_stamp
 from .sources import build_source_adapters_from_settings, market_source_status
 from .storage import PhilalensStore, new_id, utc_now
@@ -52,6 +64,13 @@ class CropCreate(BaseModel):
 
 class CropSelection(BaseModel):
     crop_ids: list[str] = Field(default_factory=list)
+
+
+class OwnerValuationUpdate(BaseModel):
+    estimated_value_low: float = Field(ge=0)
+    estimated_value_high: float = Field(ge=0)
+    currency: str = Field(default="EUR", min_length=3, max_length=3)
+    note: str | None = Field(default=None, max_length=500)
 
 
 class AppSettingsUpdate(BaseModel):
@@ -366,6 +385,136 @@ def resume_evaluation_run(run_id: str) -> dict[str, object]:
     )
     thread.start()
     return _get_evaluation_job_or_404(job_id)
+
+
+@app.post("/api/crops/{crop_id}/valuation")
+def set_owner_valuation(crop_id: str, update: OwnerValuationUpdate) -> dict[str, object]:
+    """Record an owner-reviewed value range (from realized-sale comparisons).
+
+    This is the human step the automated funnel cannot do: the owner checks
+    sold prices for the identified stamp and enters a low-high range. The
+    record is appended to the crop's newest evaluated run so it becomes the
+    stamp's current valuation.
+    """
+    crop = store.get_crop(crop_id)
+    if crop is None:
+        raise HTTPException(status_code=404, detail="Crop not found.")
+    page = store.get_page(crop.page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Page not found.")
+    if update.estimated_value_low > update.estimated_value_high:
+        raise HTTPException(status_code=400, detail="Range low must not exceed high.")
+
+    previous: StampValuationRecord | None = None
+    for run in store.list_evaluation_runs(page.collection_id):
+        previous = store.get_stamp_valuation_for_crop(run.run_id, crop.crop_id)
+        if previous is not None:
+            break
+    if previous is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Run a Tier 1 evaluation on this stamp before recording a value range.",
+        )
+
+    assumptions = [
+        f"{OWNER_REVIEWED_PREFIX}: entered manually from realized-sale comparisons.",
+    ]
+    if update.note and update.note.strip():
+        assumptions.append(f"Owner note: {update.note.strip()}")
+    assumptions.extend(
+        item for item in previous.assumptions if item.startswith("Model rationale:")
+    )
+    uncertainty_warnings = [
+        warning
+        for warning in previous.uncertainty_warnings
+        if warning
+        not in {
+            "no_evidence_backed_value_range",
+            "asking_prices_only_weak_evidence",
+            "market_evidence_not_checked",
+        }
+    ]
+
+    store.add_stamp_valuation(
+        StampValuationRecord(
+            valuation_id=new_id("val"),
+            run_id=previous.run_id,
+            crop_id=crop.crop_id,
+            candidate_id=previous.candidate_id,
+            estimated_value_low=update.estimated_value_low,
+            estimated_value_high=update.estimated_value_high,
+            currency=update.currency.upper(),
+            identity_confidence=previous.identity_confidence,
+            condition_confidence=previous.condition_confidence,
+            market_evidence_confidence=0.7,
+            valuation_confidence=round(min(previous.identity_confidence, 0.8), 2),
+            value_bucket=previous.value_bucket,
+            assumptions=assumptions,
+            uncertainty_warnings=uncertainty_warnings,
+            recommended_next_action="owner-reviewed; no further action needed",
+            evidence_ids=previous.evidence_ids,
+        )
+    )
+
+    export = build_collection_export(store, page.collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after update.")
+    return export
+
+
+@app.post("/api/crops/{crop_id}/image")
+async def replace_crop_image(crop_id: str, file: UploadFile = File(...)) -> dict[str, object]:
+    """Replace a crop's image with a recaptured (better) photo of the stamp.
+
+    The page keeps the crop's location box; the crop image itself becomes the
+    uploaded photo, downscaled for analysis. Re-analyze the stamp afterwards
+    to refresh identification and triage from the better image.
+    """
+    crop = store.get_crop(crop_id)
+    if crop is None:
+        raise HTTPException(status_code=404, detail="Crop not found.")
+
+    filename = safe_filename(file.filename, "recapture.jpg")
+    if not supported_image_extension(filename):
+        raise HTTPException(status_code=400, detail=f"Unsupported image format: {filename}")
+
+    crop_path = Path(crop.crop_path)
+    original_path = crop_path.parent / f"{crop.crop_id}_recapture{Path(filename).suffix.lower()}"
+    await _persist_upload(file, original_path)
+    try:
+        normalize_image(original_path, crop_path)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Keep the vision payload reasonable for close-up photos.
+    with Image.open(crop_path) as image:
+        if max(image.size) > 1600:
+            image.thumbnail((1600, 1600))
+            image.save(crop_path, format="JPEG", quality=92)
+
+    updated = replace(
+        crop,
+        review_state=REVIEW_UNREVIEWED,
+        warnings=["recaptured_image"],
+    )
+    store.update_crop(updated)
+    return {"crop": asdict(updated)}
+
+
+@app.get("/api/collections/{collection_id}/recapture-kit.html")
+def get_recapture_kit(collection_id: str) -> HTMLResponse:
+    html_page = build_recapture_kit_html(store, collection_id)
+    if html_page is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    return HTMLResponse(html_page)
+
+
+@app.get("/api/collections/{collection_id}/report.html")
+def get_collection_report(collection_id: str) -> HTMLResponse:
+    html_page = build_collection_report_html(store, collection_id)
+    if html_page is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    return HTMLResponse(html_page)
 
 
 @app.post("/api/crops/{crop_id}/evidence")

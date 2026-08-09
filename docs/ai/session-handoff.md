@@ -2,7 +2,28 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09): First Batch Run Reviewed + Evidence UX Fixes
+## Latest Session (2026-08-09, part 2): Phase 4 Implemented
+
+75 backend tests pass; frontend builds; live-verified against the real
+collection (kit lists the 6 flagged stamps; report shows 599 analyzed).
+See `docs/rebuild-plan-v2.md` Phase 4 notes. Summary: owner-reviewed value
+ranges (drawer form + sold-listings link, `POST /api/crops/{id}/valuation`,
+"Owner-reviewed range" assumption marker, CSV `owner_reviewed` column),
+printable recapture kit (photo checklist from unobservable factors),
+recapture photo upload replacing the crop image (`POST
+/api/crops/{id}/image` + drawer "Replace photo" + re-analyze), and the
+printable collection report with per-currency owner-reviewed totals.
+
+Correction from part 1: the "13 possibly_interesting" was a record count
+(Tier 2 passes append valuations); the true stamp count is 6 — the UI was
+right.
+
+NEXT: the user runs the remaining Tier 1 batches (~4,700 stamps ready +
+~2,600 crops still to curate), gathers evidence + sold-comp ranges for
+flagged stamps, recaptures the shortlist, then the full report. Phase 5
+(final full-collection pass) needs no new code.
+
+## Earlier Session (2026-08-09, part 1): First Batch Run Reviewed + Evidence UX Fixes
 
 First 500-stamp parallel batch: 14 min, $0.79, 0 errors, 494 likely_common
 + 13 possibly_interesting (2.6%), avg identity confidence 0.84. User judged

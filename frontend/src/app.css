@@ -1320,3 +1320,12 @@ kbd {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.range-form {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--raised);
+  font-size: 13px;
+}

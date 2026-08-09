@@ -150,6 +150,24 @@ export function gatherCropEvidence(cropId: string): Promise<CollectionExport> {
   return request(`/api/crops/${cropId}/evidence`, { method: "POST" });
 }
 
+export function setOwnerValuation(
+  cropId: string,
+  update: {
+    estimated_value_low: number;
+    estimated_value_high: number;
+    currency: string;
+    note?: string;
+  },
+): Promise<CollectionExport> {
+  return request(`/api/crops/${cropId}/valuation`, jsonInit("POST", update));
+}
+
+export function replaceCropImage(cropId: string, file: File): Promise<{ crop: CropRecord }> {
+  const form = new FormData();
+  form.append("file", file);
+  return request(`/api/crops/${cropId}/image`, { method: "POST", body: form });
+}
+
 export function startEvidenceGathering(
   collectionId: string,
   cropIds?: string[],

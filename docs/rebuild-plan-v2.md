@@ -310,7 +310,7 @@ Still pending for Phase 3 acceptance (needs the user):
    calibration run bucketed all 46 evaluated crops `likely_common`), then
    judge evidence usefulness per flagged stamp.
 
-### Phase 4: Shortlist + recapture loop
+### Phase 4: Shortlist + recapture loop — IMPLEMENTED (2026-08-09)
 
 - Recapture kit generation (per-stamp photo instructions).
 - Attach recaptured images to existing stamps; re-run Tier 1/2 on upgraded
@@ -319,6 +319,30 @@ Still pending for Phase 3 acceptance (needs the user):
   CSV/JSON export (existing exporter extended).
 - Acceptance: the user can print/follow the recapture list at the physical
   albums and feed photos back in.
+
+Implementation completed 2026-08-09. Notes:
+
+- Owner-reviewed value ranges close the valuation loop the automated funnel
+  cannot: the public eBay API exposes only asking prices, so the drawer
+  links to eBay SOLD listings for the stamp's identity and the owner enters
+  a low-high range (+ note) via `POST /api/crops/{id}/valuation`. The
+  record appends to the crop's newest evaluated run with an
+  "Owner-reviewed range" assumption marker, market_evidence_confidence 0.7,
+  and next action "owner-reviewed". CSV gains an `owner_reviewed` column.
+- Recapture: `GET /api/collections/{id}/recapture-kit.html` renders a
+  printable card per attention-bucket stamp (thumbnail, page/position,
+  identity, flag rationale, photo checklist derived from the observation's
+  unobservable factors — back/backlit/perforation-ruler shots). New photos
+  feed back via `POST /api/crops/{id}/image` (drawer "Replace photo"):
+  the uploaded image replaces the crop image (downscaled to 1600px),
+  marks the crop `recaptured_image`, and Re-analyze refreshes the AI pass.
+  Back-side/watermark photos inform the OWNER's manual review; the
+  single-image Tier 1 pass analyzes the front recapture.
+- `GET /api/collections/{id}/report.html`: printable collection report —
+  triage distribution, owner-reviewed ranges with per-currency totals,
+  outstanding flagged list, explicit not-an-appraisal disclaimer. Overview
+  gains Collection report and Recapture kit buttons. All model-derived text
+  is HTML-escaped.
 
 ### Phase 5: Full collection run
 

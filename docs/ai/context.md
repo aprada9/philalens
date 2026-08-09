@@ -48,10 +48,19 @@ in `market_evidence.py` (enriches the latest completed run, appends one
 updated valuation per crop, range only from >= 2 realized-sale prices with
 identity confidence >= 0.5, explicit "No value range:" reasons otherwise),
 evidence endpoints, and UI (drawer Gather evidence button, Market value
-section, Overview batch button, Settings eBay fields). See
-`docs/rebuild-plan-v2.md` Phase 3 notes for pending acceptance items. Next:
-Phase 4 (shortlist + recapture loop) once flagged stamps exist and evidence
-quality is judged.
+section, Overview batch button, Settings eBay fields). eBay went live
+2026-08-08 (user-confirmed working).
+
+Phase 4 (shortlist + recapture loop) was implemented 2026-08-09:
+owner-reviewed value ranges (sold-listings link + drawer range form →
+`POST /api/crops/{id}/valuation`, marked with an "Owner-reviewed range"
+assumption; CSV `owner_reviewed` column), printable recapture kit
+(`/api/collections/{id}/recapture-kit.html`, photo checklist per flagged
+stamp from unobservable factors), recapture photo upload replacing the
+crop image (`POST /api/crops/{id}/image` + Re-analyze), and the printable
+collection report (`/api/collections/{id}/report.html`). See
+`docs/rebuild-plan-v2.md` Phase 4 notes. Phase 5 (full collection) is a
+usage phase, not a build phase.
 
 Workflow refinements (2026-08-08, from user feedback): Overview has a
 scope-selectable "Run evaluation" panel (not-analyzed / flagged / failed /

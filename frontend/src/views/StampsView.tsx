@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BUCKETS, bucketMeta, stampBucket, stampHeadline, topCandidate } from "../buckets";
 import type { CollectionExport, Stamp } from "../types";
 
@@ -15,6 +15,16 @@ interface Props {
   onFixCrop: (cropId: string) => void;
   onReanalyze: (cropId: string) => void;
   onGatherEvidence: (cropId: string) => void;
+  onSetValuation: (
+    cropId: string,
+    update: {
+      estimated_value_low: number;
+      estimated_value_high: number;
+      currency: string;
+      note?: string;
+    },
+  ) => void;
+  onReplaceImage: (cropId: string, file: File) => void;
   onDeleteCrop: (cropId: string) => void;
 }
 
@@ -44,6 +54,8 @@ export default function StampsView({
   onFixCrop,
   onReanalyze,
   onGatherEvidence,
+  onSetValuation,
+  onReplaceImage,
   onDeleteCrop,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -287,6 +299,8 @@ export default function StampsView({
           onFixCrop={() => onFixCrop(drawerStamp.crop_id)}
           onReanalyze={() => onReanalyze(drawerStamp.crop_id)}
           onGatherEvidence={() => onGatherEvidence(drawerStamp.crop_id)}
+          onSetValuation={(update) => onSetValuation(drawerStamp.crop_id, update)}
+          onReplaceImage={(file) => onReplaceImage(drawerStamp.crop_id, file)}
           onDelete={() => onDeleteCrop(drawerStamp.crop_id)}
         />
       )}
@@ -364,6 +378,8 @@ function StampDrawer({
   onFixCrop,
   onReanalyze,
   onGatherEvidence,
+  onSetValuation,
+  onReplaceImage,
   onDelete,
 }: {
   stamp: Stamp;
@@ -374,8 +390,22 @@ function StampDrawer({
   onFixCrop: () => void;
   onReanalyze: () => void;
   onGatherEvidence: () => void;
+  onSetValuation: (update: {
+    estimated_value_low: number;
+    estimated_value_high: number;
+    currency: string;
+    note?: string;
+  }) => void;
+  onReplaceImage: (file: File) => void;
   onDelete: () => void;
 }) {
+  const [rangeFormOpen, setRangeFormOpen] = useState(false);
+  const [rangeLow, setRangeLow] = useState("");
+  const [rangeHigh, setRangeHigh] = useState("");
+  const [rangeCurrency, setRangeCurrency] = useState("EUR");
+  const [rangeNote, setRangeNote] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -403,6 +433,13 @@ function StampDrawer({
     .trim();
   const hasRange =
     valuation.estimated_value_low !== null && valuation.estimated_value_high !== null;
+  const ownerReviewed = (valuation.assumptions ?? []).some((item) =>
+    item.startsWith("Owner-reviewed range"),
+  );
+  const ownerNote = (valuation.assumptions ?? [])
+    .find((item) => item.startsWith("Owner note:"))
+    ?.replace("Owner note:", "")
+    .trim();
   const evidenceChecked = hasRange || noRangeReason !== undefined || stamp.evidence.length > 0;
   const catalogHints = (candidate?.variant_notes ?? []).filter((note) =>
     note.startsWith("catalog_hint"),
@@ -504,20 +541,22 @@ function StampDrawer({
           </div>
         )}
 
-        {evidenceChecked && (
+        {(evidenceChecked || ownerReviewed || candidate) && (
           <div className="d-section">
             <h4>Market value</h4>
             {hasRange ? (
               <div style={{ fontSize: 13 }}>
-                Evidence-backed range: <b>
+                {ownerReviewed ? "Owner-reviewed range" : "Evidence-backed range"}: <b>
                   {valuation.estimated_value_low}–{valuation.estimated_value_high}{" "}
                   {valuation.currency}
                 </b>{" "}
-                — from realized sales; not a formal appraisal.
+                — {ownerReviewed ? "from sold comparisons you reviewed" : "from realized sales"};
+                not a formal appraisal.
+                {ownerNote && <div className="muted">Note: {ownerNote}</div>}
               </div>
             ) : (
               <div style={{ fontSize: 13 }} className="muted">
-                No value range{noRangeReason ? ` — ${noRangeReason}` : "."}
+                No value range{noRangeReason ? ` — ${noRangeReason}` : " yet."}
               </div>
             )}
             {askingContext && (
@@ -539,6 +578,78 @@ function StampDrawer({
                   → Check realized prices: eBay sold listings for this identity
                 </a>
                 <span className="muted"> (sold prices are the evidence that can set a range)</span>
+              </div>
+            )}
+            {!rangeFormOpen ? (
+              <button
+                className="btn"
+                style={{ marginTop: 8 }}
+                onClick={() => setRangeFormOpen(true)}
+                disabled={busy}
+              >
+                ✎ {ownerReviewed ? "Update value range" : "Set value range from sold prices"}
+              </button>
+            ) : (
+              <div className="range-form">
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="low"
+                    value={rangeLow}
+                    onChange={(event) => setRangeLow(event.target.value)}
+                    style={{ width: 80 }}
+                  />
+                  <span>–</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="high"
+                    value={rangeHigh}
+                    onChange={(event) => setRangeHigh(event.target.value)}
+                    style={{ width: 80 }}
+                  />
+                  <select
+                    value={rangeCurrency}
+                    onChange={(event) => setRangeCurrency(event.target.value)}
+                  >
+                    <option value="EUR">EUR</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+                <input
+                  placeholder="Note, e.g. '5 sold comps on eBay, used condition'"
+                  value={rangeNote}
+                  onChange={(event) => setRangeNote(event.target.value)}
+                  style={{ marginTop: 6, width: "100%" }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                  <button
+                    className="btn primary"
+                    disabled={
+                      busy ||
+                      rangeLow.trim() === "" ||
+                      rangeHigh.trim() === "" ||
+                      Number(rangeLow) > Number(rangeHigh)
+                    }
+                    onClick={() => {
+                      onSetValuation({
+                        estimated_value_low: Number(rangeLow),
+                        estimated_value_high: Number(rangeHigh),
+                        currency: rangeCurrency,
+                        ...(rangeNote.trim() ? { note: rangeNote.trim() } : {}),
+                      });
+                      setRangeFormOpen(false);
+                    }}
+                  >
+                    Save range
+                  </button>
+                  <button className="btn" onClick={() => setRangeFormOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -594,10 +705,29 @@ function StampDrawer({
           >
             🔍 Gather evidence
           </button>
+          <button
+            className="btn"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={busy}
+            title="Upload a better photo of this stamp (recapture); the crop image is replaced and can be re-analyzed"
+          >
+            📷 Replace photo
+          </button>
           <button className="btn danger" onClick={onDelete} disabled={busy}>
             Delete crop
           </button>
         </div>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          style={{ display: "none" }}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onReplaceImage(file);
+            event.target.value = "";
+          }}
+        />
       </div>
     </>
   );

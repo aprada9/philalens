@@ -395,6 +395,51 @@ export default function App() {
     [mutate],
   );
 
+  const handleSetValuation = useCallback(
+    (
+      cropId: string,
+      update: {
+        estimated_value_low: number;
+        estimated_value_high: number;
+        currency: string;
+        note?: string;
+      },
+    ) => {
+      void mutate(() => api.setOwnerValuation(cropId, update));
+    },
+    [mutate],
+  );
+
+  const handleReplaceImage = useCallback(
+    async (cropId: string, file: File) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const { crop } = await api.replaceCropImage(cropId, file);
+        applyLocalPages((pages) =>
+          pages.map((page) => ({
+            ...page,
+            stamps: page.stamps.map((stamp) =>
+              stamp.crop_id === cropId
+                ? { ...stamp, review_state: crop.review_state, warnings: crop.warnings }
+                : stamp,
+            ),
+          })),
+        );
+        setImageVersion((version) => version + 1);
+        setNotice(
+          "Photo replaced. Hit Re-analyze on this stamp to refresh its identification "
+            + "from the better image.",
+        );
+      } catch (exc) {
+        reportError(exc);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyLocalPages, reportError],
+  );
+
   const handleGatherEvidenceAll = useCallback(async () => {
     if (!exp) return;
     setError(null);
@@ -567,6 +612,8 @@ export default function App() {
               onFixCrop={fixCrop}
               onReanalyze={(cropId) => void handleEvaluate([cropId])}
               onGatherEvidence={handleGatherEvidence}
+              onSetValuation={handleSetValuation}
+              onReplaceImage={(cropId, file) => void handleReplaceImage(cropId, file)}
               onDeleteCrop={(cropId) => void handleDeleteCrop(cropId)}
             />
           )}
