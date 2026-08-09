@@ -289,6 +289,80 @@ class EbayBrowseAdapter:
         return self._token
 
 
+class HipStampAdapter:
+    """HipStamp marketplace keyword search (stamps-only marketplace).
+
+    Active listings only — asking prices, stored as weak evidence like eBay.
+    The material is better identified than general marketplaces (dealer and
+    APS-store listings), so keyword matches skew more relevant. API key is
+    free via app registration at hipstamp.com; 10k requests/day.
+    """
+
+    source_name = "hipstamp"
+
+    def __init__(
+        self,
+        api_key: str,
+        http_client: httpx.Client | None = None,
+        max_results: int = 10,
+    ) -> None:
+        self._api_key = api_key
+        self._client = http_client
+        self._max_results = max_results
+
+    def fetch_evidence(self, query: EvidenceQuery) -> list[EvidenceItem]:
+        terms = query.search_terms()
+        if not terms:
+            return []
+        payload = _get_json(
+            self._client,
+            "https://www.hipstamp.com/api/listings",
+            params={
+                "keywords": terms,
+                "limit": str(self._max_results),
+                "api_key": self._api_key,
+            },
+            source_name=self.source_name,
+        )
+        results = payload.get("results", [])
+        if not isinstance(results, list):
+            return []
+
+        items: list[EvidenceItem] = []
+        for listing in results[: self._max_results]:
+            if not isinstance(listing, dict):
+                continue
+            try:
+                price = float(listing.get("current_price"))
+            except (TypeError, ValueError):
+                price = None
+            items.append(
+                EvidenceItem(
+                    source_name=self.source_name,
+                    source_type=SOURCE_TYPE_MARKETPLACE_LISTING,
+                    evidence_tier=TIER_ACTIVE_LISTING_WEAK,
+                    confidence=0.25,
+                    source_url=listing.get("url"),
+                    local_reference_id=str(listing.get("id", "")) or None,
+                    matched_fields={
+                        "query": terms,
+                        "listing_title": listing.get("name"),
+                        "seller": listing.get("username"),
+                    },
+                    price=price,
+                    currency=str(listing.get("currency")) if listing.get("currency") else None,
+                    condition_assumptions=(
+                        "Listing condition as described by the seller; unverified."
+                    ),
+                    license_notes=(
+                        "Active HipStamp listing. Asking price only; weaker than realized sales."
+                    ),
+                    raw_payload={"listing": listing},
+                )
+            )
+        return items
+
+
 def build_source_adapters_from_settings(settings: Settings) -> list[SourceAdapter]:
     adapters: list[SourceAdapter] = [WikidataStampAdapter()]
     if settings.ebay_app_id and settings.ebay_cert_id:
@@ -300,6 +374,8 @@ def build_source_adapters_from_settings(settings: Settings) -> list[SourceAdapte
                 environment=settings.ebay_environment,
             )
         )
+    if settings.hipstamp_api_key:
+        adapters.append(HipStampAdapter(api_key=settings.hipstamp_api_key))
     return adapters
 
 
@@ -309,6 +385,7 @@ def market_source_status(settings: Settings) -> dict[str, str]:
         "ebay_browse": (
             "configured" if settings.ebay_app_id and settings.ebay_cert_id else "not_configured"
         ),
+        "hipstamp": "configured" if settings.hipstamp_api_key else "not_configured",
     }
 
 

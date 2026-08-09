@@ -17,6 +17,8 @@ export default function SettingsDialog({ onClose }: Props) {
   const [ebayAppId, setEbayAppId] = useState("");
   const [ebayCertId, setEbayCertId] = useState("");
   const [ebayConfigured, setEbayConfigured] = useState(false);
+  const [hipstampKey, setHipstampKey] = useState("");
+  const [hipstampConfigured, setHipstampConfigured] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -35,6 +37,7 @@ export default function SettingsDialog({ onClose }: Props) {
         );
         setDetail(settings.openai_vision_detail);
         setEbayConfigured(settings.market_sources?.ebay_browse === "configured");
+        setHipstampConfigured(settings.market_sources?.hipstamp === "configured");
       } catch (exc) {
         setStatus(String(exc instanceof Error ? exc.message : exc));
       }
@@ -52,12 +55,15 @@ export default function SettingsDialog({ onClose }: Props) {
         openai_vision_detail: detail,
         ...(ebayAppId.trim() ? { ebay_app_id: ebayAppId.trim() } : {}),
         ...(ebayCertId.trim() ? { ebay_cert_id: ebayCertId.trim() } : {}),
+        ...(hipstampKey.trim() ? { hipstamp_api_key: hipstampKey.trim() } : {}),
       });
       setKeySet(settings.openai_api_key_set);
       setApiKey("");
       setEbayAppId("");
       setEbayCertId("");
+      setHipstampKey("");
       setEbayConfigured(settings.market_sources?.ebay_browse === "configured");
+      setHipstampConfigured(settings.market_sources?.hipstamp === "configured");
       setStatus("Saved. Settings are live immediately.");
     } catch (exc) {
       setStatus(String(exc instanceof Error ? exc.message : exc));
@@ -161,6 +167,18 @@ export default function SettingsDialog({ onClose }: Props) {
             value={ebayCertId}
             placeholder={ebayConfigured ? "••••••••" : "Cert ID (Client Secret)"}
             onChange={(event) => setEbayCertId(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label>
+            HipStamp API key {hipstampConfigured ? "(configured — leave blank to keep)" : "(not set)"}
+          </label>
+          <input
+            type="password"
+            value={hipstampKey}
+            placeholder={hipstampConfigured ? "••••••••" : "free key from hipstamp.com app registration"}
+            onChange={(event) => setHipstampKey(event.target.value)}
             autoComplete="off"
           />
         </div>

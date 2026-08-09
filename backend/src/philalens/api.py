@@ -81,6 +81,7 @@ class AppSettingsUpdate(BaseModel):
     openai_vision_detail: str = Field(default="high")
     ebay_app_id: str | None = Field(default=None)
     ebay_cert_id: str | None = Field(default=None)
+    hipstamp_api_key: str | None = Field(default=None)
 
 
 _startup_settings = get_settings()
@@ -702,6 +703,8 @@ def update_app_settings(update: AppSettingsUpdate) -> dict[str, object]:
         values["PHILALENS_EBAY_APP_ID"] = update.ebay_app_id.strip()
     if update.ebay_cert_id is not None and update.ebay_cert_id.strip():
         values["PHILALENS_EBAY_CERT_ID"] = update.ebay_cert_id.strip()
+    if update.hipstamp_api_key is not None and update.hipstamp_api_key.strip():
+        values["PHILALENS_HIPSTAMP_API_KEY"] = update.hipstamp_api_key.strip()
 
     _write_env_values(PROJECT_ROOT / ".env", values)
     for key, value in values.items():

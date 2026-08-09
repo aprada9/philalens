@@ -100,6 +100,9 @@ class Settings:
     ebay_environment: str = field(
         default_factory=lambda: _getenv("PHILALENS_EBAY_ENVIRONMENT", "production").lower()
     )
+    hipstamp_api_key: str | None = field(
+        default_factory=lambda: _getenv_optional("PHILALENS_HIPSTAMP_API_KEY")
+    )
 
     @property
     def database_path(self) -> Path:

@@ -2,7 +2,25 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09, part 4): AI Value Estimation (Tier 2.5)
+## Latest Session (2026-08-09, part 5): HipStamp Adapter + Source Survey
+
+The user suggested HipStamp, Colnect, theswedishtiger.com, and the APS
+store. Findings: HipStamp has a free public API (hip-ecommerce.readme.io,
+10k req/day, keyword search over active listings incl. the APS store) —
+adapter implemented (`HipStampAdapter`, key via Settings/.env as
+`PHILALENS_HIPSTAMP_API_KEY`, active_listing_weak tier). Colnect actively
+blocks automated access (Anubis anti-bot) — confirmed hands-off without
+written permission. theswedishtiger.com is a hobbyist identification
+reference (no API; the LLM already covers that knowledge).
+
+The user also announced they want to OPEN-SOURCE the repo as a CV
+portfolio piece with a highly visual README (screenshots/mockups, no live
+page) — their LinkedIn CV HTML is at ~/Downloads. Pre-flight needed before
+public: secret scan of git history, license, README rewrite with
+screenshots. Questions pending with the user (real collection images in
+screenshots? license? language?).
+
+## Earlier Session (2026-08-09, part 4): AI Value Estimation (Tier 2.5)
 
 The user found per-stamp manual sold-comp checking too heavy for a
 non-expert and asked whether the AI can estimate values and whether

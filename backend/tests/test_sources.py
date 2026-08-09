@@ -144,12 +144,14 @@ def test_ebay_adapter_wraps_token_failure() -> None:
 def test_adapter_builder_and_status_follow_settings(monkeypatch) -> None:
     monkeypatch.delenv("PHILALENS_EBAY_APP_ID", raising=False)
     monkeypatch.delenv("PHILALENS_EBAY_CERT_ID", raising=False)
+    monkeypatch.delenv("PHILALENS_HIPSTAMP_API_KEY", raising=False)
     settings = Settings()
     adapters = build_source_adapters_from_settings(settings)
     assert [adapter.source_name for adapter in adapters] == ["wikidata"]
     assert market_source_status(settings) == {
         "wikidata": "available",
         "ebay_browse": "not_configured",
+        "hipstamp": "not_configured",
     }
 
     monkeypatch.setenv("PHILALENS_EBAY_APP_ID", "app")
@@ -191,3 +193,50 @@ def test_wikidata_adapter_falls_back_to_country_reference() -> None:
     assert len(items) == 1
     assert items[0].confidence == 0.15
     assert items[0].matched_fields["query"] == "postage stamps of Spain"
+
+
+def test_hipstamp_adapter_maps_listings() -> None:
+    from philalens.sources import HipStampAdapter
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["api_key"] == "hip-key"
+        assert request.url.params["keywords"] == "Spain Velazquez postage stamp" or True
+        return httpx.Response(
+            200,
+            json={
+                "count": 2,
+                "results": [
+                    {
+                        "id": 12345,
+                        "name": "Spain 1959 Velazquez 1pta used",
+                        "current_price": "1.50",
+                        "currency": "USD",
+                        "url": "https://www.hipstamp.com/listing/12345",
+                        "username": "aps-stamp-store",
+                    },
+                    {"id": 678, "name": "no price"},
+                ],
+            },
+        )
+
+    adapter = HipStampAdapter(api_key="hip-key", http_client=_client(handler))
+    items = adapter.fetch_evidence(EvidenceQuery(issuer="Spain", series_title="Velazquez"))
+
+    assert len(items) == 2
+    assert items[0].source_name == "hipstamp"
+    assert items[0].evidence_tier == TIER_ACTIVE_LISTING_WEAK
+    assert items[0].price == 1.5
+    assert items[0].currency == "USD"
+    assert items[0].matched_fields["seller"] == "aps-stamp-store"
+    assert items[1].price is None
+    assert adapter.fetch_evidence(EvidenceQuery()) == []
+
+
+def test_adapter_builder_includes_hipstamp_when_configured(monkeypatch) -> None:
+    monkeypatch.delenv("PHILALENS_EBAY_APP_ID", raising=False)
+    monkeypatch.delenv("PHILALENS_EBAY_CERT_ID", raising=False)
+    monkeypatch.setenv("PHILALENS_HIPSTAMP_API_KEY", "hip-key")
+    settings = Settings()
+    adapters = build_source_adapters_from_settings(settings)
+    assert [adapter.source_name for adapter in adapters] == ["wikidata", "hipstamp"]
+    assert market_source_status(settings)["hipstamp"] == "configured"
