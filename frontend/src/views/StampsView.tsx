@@ -49,6 +49,7 @@ export default function StampsView({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<StampSort>("attention");
   const [countryFilter, setCountryFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "analyzed" | "not_analyzed">("all");
   const [yearRange, setYearRange] = useState<[number, number] | null>(null);
 
   const pageByCrop = useMemo(() => {
@@ -105,8 +106,12 @@ export default function StampsView({
 
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
+    const isAnalyzed = (stamp: Stamp) =>
+      stamp.observation.status === "available" && (stamp.observation.confidence ?? 0) > 0;
     let list = stamps.filter((stamp) => {
       if (bucketFilter && stampBucket(stamp) !== bucketFilter) return false;
+      if (statusFilter === "analyzed" && !isAnalyzed(stamp)) return false;
+      if (statusFilter === "not_analyzed" && isAnalyzed(stamp)) return false;
       const candidate = topCandidate(stamp);
       if (countryFilter && candidate?.issuer !== countryFilter) return false;
       if (yearRange) {
@@ -156,7 +161,7 @@ export default function StampsView({
       );
     }
     return list;
-  }, [stamps, bucketFilter, query, sort, pageByCrop, countryFilter, yearRange]);
+  }, [stamps, bucketFilter, query, sort, pageByCrop, countryFilter, statusFilter, yearRange]);
 
   const drawerStamp = stamps.find((stamp) => stamp.crop_id === drawerCropId) ?? null;
 
@@ -190,6 +195,17 @@ export default function StampsView({
           </button>
         ))}
         <span className="grow" />
+        <select
+          value={statusFilter}
+          onChange={(event) =>
+            setStatusFilter(event.target.value as "all" | "analyzed" | "not_analyzed")
+          }
+          title="Filter by AI analysis status"
+        >
+          <option value="all">All statuses</option>
+          <option value="analyzed">Analyzed</option>
+          <option value="not_analyzed">Not analyzed yet</option>
+        </select>
         <select
           value={countryFilter}
           onChange={(event) => setCountryFilter(event.target.value)}
@@ -509,6 +525,22 @@ function StampDrawer({
                 Asking prices (weak evidence): {askingContext}
               </div>
             )}
+            {candidate && (
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                <a
+                  href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(
+                    [candidate.issuer, candidate.title, candidate.year, candidate.denomination, "stamp"]
+                      .filter(Boolean)
+                      .join(" "),
+                  )}&LH_Sold=1&LH_Complete=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  → Check realized prices: eBay sold listings for this identity
+                </a>
+                <span className="muted"> (sold prices are the evidence that can set a range)</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -546,7 +578,17 @@ function StampDrawer({
           </button>
           <button
             className="btn"
-            onClick={onGatherEvidence}
+            onClick={() => {
+              if (
+                stamp.evidence.length > 0 &&
+                !window.confirm(
+                  "Evidence was already gathered for this stamp. Fetch again and replace it?",
+                )
+              ) {
+                return;
+              }
+              onGatherEvidence();
+            }}
             disabled={busy}
             title="Search Wikidata and eBay (when configured) for this stamp's identity"
           >

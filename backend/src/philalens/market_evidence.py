@@ -144,21 +144,26 @@ def _gather_for_crop(
         )
         return 0
 
-    evidence_records: list[SourceEvidenceRecord] = []
+    gathered_items: list[EvidenceItem] = []
     failed_sources: list[str] = []
     for adapter in adapters:
         try:
-            items = adapter.fetch_evidence(query)
+            gathered_items.extend(adapter.fetch_evidence(query))
         except SourceAdapterError as exc:
             errors.append(f"{crop.crop_id}: {exc}")
             failed_sources.append(adapter.source_name)
-            continue
-        for item in items:
-            evidence_records.append(
-                store.add_source_evidence(
-                    _evidence_record(run.run_id, crop.crop_id, top_candidate, item)
-                )
-            )
+
+    # Re-gathering replaces the crop's previous evidence instead of piling
+    # up duplicates — but never wipe existing evidence over a failed pass.
+    if gathered_items or not failed_sources:
+        store.delete_source_evidence_for_crop(run.run_id, crop.crop_id)
+
+    evidence_records = [
+        store.add_source_evidence(
+            _evidence_record(run.run_id, crop.crop_id, top_candidate, item)
+        )
+        for item in gathered_items
+    ]
 
     store.add_stamp_valuation(
         _updated_valuation(
@@ -274,7 +279,14 @@ def _updated_valuation(
     assumptions = [
         assumption
         for assumption in (previous.assumptions if previous else [])
-        if not assumption.startswith(("Value range:", "No value range:", "Asking-price context:"))
+        if not assumption.startswith(
+            (
+                "Value range:",
+                "No value range:",
+                "Asking-price context:",
+                "Evidence sources unavailable",
+            )
+        )
     ]
     if value_low is not None and value_high is not None:
         assumptions.append(

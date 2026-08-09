@@ -2,7 +2,29 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 10): Batch Evaluation
+## Latest Session (2026-08-09): First Batch Run Reviewed + Evidence UX Fixes
+
+First 500-stamp parallel batch: 14 min, $0.79, 0 errors, 494 likely_common
++ 13 possibly_interesting (2.6%), avg identity confidence 0.84. User judged
+results good.
+
+- Stamps view gained an analysis-status filter (All / Analyzed / Not
+  analyzed yet).
+- Re-gathering evidence now REPLACES the crop's previous evidence records
+  (never wiping on a failed pass); the drawer button confirms before
+  re-fetching; "Evidence sources unavailable" assumptions no longer
+  accumulate. Existing duplicate evidence rows from double-gathers were
+  deduped in the live DB (74 → 64 rows).
+- The drawer's Market value section links to eBay SOLD listings for the
+  stamp's identity (LH_Sold search URL) — realized prices are the evidence
+  class that can set a range, and the public API only exposes active
+  listings, so the human checks sold comps in the browser.
+- User's open question: how to reach an estimated value range with
+  confidence. Answered: the range policy requires realized-sale evidence;
+  next build step is Phase 4's reviewed-valuation workflow (user-entered
+  range from sold comps, marked human-reviewed) + recapture kit + report.
+
+## Earlier Session (2026-08-08, part 10): Batch Evaluation
 
 The user wants to run Tier 1 in sets (analyze a batch, check results,
 run the next) rather than 5,251 stamps in one go. The Run evaluation panel

@@ -270,3 +270,25 @@ def test_summary_counts_latest_valuation_per_crop(tmp_path: Path) -> None:
     # double count it.
     assert summary["evaluated_stamp_count"] == 2
     assert summary["value_bucket_counts"] == {"investigate": 1, "likely_common": 1}
+
+
+def test_regathering_replaces_previous_evidence(tmp_path: Path) -> None:
+    store, collection, run = _setup_collection(tmp_path, {"crop_b": "investigate"})
+    adapter = FakeAdapter("ebay_browse", [_listing_item(2.5), _listing_item(15.0)])
+
+    gather_market_evidence(store, collection.collection_id, [adapter], crop_ids=["crop_b"])
+    gather_market_evidence(store, collection.collection_id, [adapter], crop_ids=["crop_b"])
+
+    evidence = store.list_source_evidence_for_crop(run.run_id, "crop_b")
+    assert len(evidence) == 2  # replaced, not accumulated
+    valuation = store.get_stamp_valuation_for_crop(run.run_id, "crop_b")
+    assert len(valuation.evidence_ids) == 2
+    assert (
+        sum(1 for item in valuation.assumptions if item.startswith("No value range:")) == 1
+    )
+
+    # A failed pass must not wipe evidence gathered earlier.
+    gather_market_evidence(
+        store, collection.collection_id, [FailingAdapter()], crop_ids=["crop_b"]
+    )
+    assert len(store.list_source_evidence_for_crop(run.run_id, "crop_b")) == 2

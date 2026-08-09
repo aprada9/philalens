@@ -865,6 +865,14 @@ class PhilalensStore:
             )
         return evidence
 
+    def delete_source_evidence_for_crop(self, run_id: str, crop_id: str) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM source_evidence WHERE run_id = ? AND crop_id = ?",
+                (run_id, crop_id),
+            )
+        return cursor.rowcount
+
     def list_source_evidence_for_run(self, run_id: str) -> list[SourceEvidenceRecord]:
         with self._connect() as connection:
             rows = connection.execute(
