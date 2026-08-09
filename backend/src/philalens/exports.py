@@ -276,6 +276,7 @@ def build_collection_csv(store: PhilalensStore, collection_id: str) -> str | Non
             "valuation_confidence",
             "recommended_next_action",
             "owner_reviewed",
+            "ai_estimated",
         ],
     )
     writer.writeheader()
@@ -324,6 +325,10 @@ def build_collection_csv(store: PhilalensStore, collection_id: str) -> str | Non
                     "recommended_next_action": valuation.get("recommended_next_action"),
                     "owner_reviewed": any(
                         str(item).startswith("Owner-reviewed range")
+                        for item in cast(list[str], valuation.get("assumptions") or [])
+                    ),
+                    "ai_estimated": any(
+                        str(item).startswith("AI-estimated range")
                         for item in cast(list[str], valuation.get("assumptions") or [])
                     ),
                 }

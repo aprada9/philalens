@@ -12,6 +12,7 @@ interface Props {
   onOpenBucket: (bucket: string | null) => void;
   onOpenStamp: (cropId: string) => void;
   onGatherEvidenceAll: () => void;
+  onAiEstimateAll: () => void;
   onDeleteCollection: () => void;
 }
 
@@ -38,6 +39,7 @@ export default function OverviewView({
   onOpenBucket,
   onOpenStamp,
   onGatherEvidenceAll,
+  onAiEstimateAll,
   onDeleteCollection,
 }: Props) {
   const stamps = useMemo(() => exp.pages.flatMap((page) => page.stamps), [exp]);
@@ -271,9 +273,17 @@ export default function OverviewView({
             <p className="muted">No evaluation run yet.</p>
           )}
           {attentionStamps.length > 0 && (
-            <div style={{ margin: "10px 0" }}>
+            <div style={{ margin: "10px 0", display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="btn" onClick={onGatherEvidenceAll} disabled={busy}>
                 🔍 Gather market evidence for all {attentionStamps.length} flagged stamps
+              </button>
+              <button
+                className="btn"
+                onClick={onAiEstimateAll}
+                disabled={busy}
+                title="One AI call per flagged stamp: conservative value range, confidence, and rarity notes — unverified priors, clearly labeled"
+              >
+                🤖 AI-estimate values for all {attentionStamps.length} flagged
               </button>
             </div>
           )}

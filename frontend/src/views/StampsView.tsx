@@ -15,6 +15,7 @@ interface Props {
   onFixCrop: (cropId: string) => void;
   onReanalyze: (cropId: string) => void;
   onGatherEvidence: (cropId: string) => void;
+  onAiEstimate: (cropId: string) => void;
   onSetValuation: (
     cropId: string,
     update: {
@@ -54,6 +55,7 @@ export default function StampsView({
   onFixCrop,
   onReanalyze,
   onGatherEvidence,
+  onAiEstimate,
   onSetValuation,
   onReplaceImage,
   onDeleteCrop,
@@ -299,6 +301,7 @@ export default function StampsView({
           onFixCrop={() => onFixCrop(drawerStamp.crop_id)}
           onReanalyze={() => onReanalyze(drawerStamp.crop_id)}
           onGatherEvidence={() => onGatherEvidence(drawerStamp.crop_id)}
+          onAiEstimate={() => onAiEstimate(drawerStamp.crop_id)}
           onSetValuation={(update) => onSetValuation(drawerStamp.crop_id, update)}
           onReplaceImage={(file) => onReplaceImage(drawerStamp.crop_id, file)}
           onDelete={() => onDeleteCrop(drawerStamp.crop_id)}
@@ -378,6 +381,7 @@ function StampDrawer({
   onFixCrop,
   onReanalyze,
   onGatherEvidence,
+  onAiEstimate,
   onSetValuation,
   onReplaceImage,
   onDelete,
@@ -390,6 +394,7 @@ function StampDrawer({
   onFixCrop: () => void;
   onReanalyze: () => void;
   onGatherEvidence: () => void;
+  onAiEstimate: () => void;
   onSetValuation: (update: {
     estimated_value_low: number;
     estimated_value_high: number;
@@ -439,6 +444,17 @@ function StampDrawer({
   const ownerNote = (valuation.assumptions ?? [])
     .find((item) => item.startsWith("Owner note:"))
     ?.replace("Owner note:", "")
+    .trim();
+  const aiEstimated = (valuation.assumptions ?? []).some((item) =>
+    item.startsWith("AI-estimated range"),
+  );
+  const aiRationale = (valuation.assumptions ?? [])
+    .find((item) => item.startsWith("AI rationale:"))
+    ?.replace("AI rationale:", "")
+    .trim();
+  const rarityNotes = (valuation.assumptions ?? [])
+    .find((item) => item.startsWith("Rarity check:"))
+    ?.replace("Rarity check:", "")
     .trim();
   const evidenceChecked = hasRange || noRangeReason !== undefined || stamp.evidence.length > 0;
   const catalogHints = (candidate?.variant_notes ?? []).filter((note) =>
@@ -546,17 +562,35 @@ function StampDrawer({
             <h4>Market value</h4>
             {hasRange ? (
               <div style={{ fontSize: 13 }}>
-                {ownerReviewed ? "Owner-reviewed range" : "Evidence-backed range"}: <b>
+                {ownerReviewed
+                  ? "Owner-reviewed range"
+                  : aiEstimated
+                    ? "🤖 AI-estimated range (unverified)"
+                    : "Evidence-backed range"}
+                : <b>
                   {valuation.estimated_value_low}–{valuation.estimated_value_high}{" "}
                   {valuation.currency}
                 </b>{" "}
-                — {ownerReviewed ? "from sold comparisons you reviewed" : "from realized sales"};
-                not a formal appraisal.
+                —{" "}
+                {ownerReviewed
+                  ? "from sold comparisons you reviewed"
+                  : aiEstimated
+                    ? "model prior from catalog knowledge; verify against sold listings if it matters"
+                    : "from realized sales"}
+                ; not a formal appraisal.
                 {ownerNote && <div className="muted">Note: {ownerNote}</div>}
+                {aiEstimated && aiRationale && (
+                  <div className="muted" style={{ marginTop: 4 }}>{aiRationale}</div>
+                )}
               </div>
             ) : (
               <div style={{ fontSize: 13 }} className="muted">
                 No value range{noRangeReason ? ` — ${noRangeReason}` : " yet."}
+              </div>
+            )}
+            {rarityNotes && (
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                <b>Rarity check:</b> {rarityNotes}
               </div>
             )}
             {askingContext && (
@@ -581,14 +615,23 @@ function StampDrawer({
               </div>
             )}
             {!rangeFormOpen ? (
-              <button
-                className="btn"
-                style={{ marginTop: 8 }}
-                onClick={() => setRangeFormOpen(true)}
-                disabled={busy}
-              >
-                ✎ {ownerReviewed ? "Update value range" : "Set value range from sold prices"}
-              </button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                <button
+                  className="btn"
+                  onClick={() => setRangeFormOpen(true)}
+                  disabled={busy}
+                >
+                  ✎ {ownerReviewed ? "Update value range" : "Set value range from sold prices"}
+                </button>
+                <button
+                  className="btn"
+                  onClick={onAiEstimate}
+                  disabled={busy}
+                  title="One AI call: conservative range, confidence, and rarity notes — an unverified prior"
+                >
+                  🤖 AI estimate
+                </button>
+              </div>
             ) : (
               <div className="range-form">
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

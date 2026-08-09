@@ -154,6 +154,20 @@ export function gatherCropEvidence(cropId: string): Promise<CollectionExport> {
   return request(`/api/crops/${cropId}/evidence`, { method: "POST" });
 }
 
+export function aiEstimateCrop(cropId: string): Promise<CollectionExport> {
+  return request(`/api/crops/${cropId}/ai-estimate`, { method: "POST" });
+}
+
+export function startAiEstimateJob(
+  collectionId: string,
+  cropIds?: string[],
+): Promise<EvaluationJob> {
+  return request(
+    `/api/collections/${collectionId}/ai-estimate/start`,
+    jsonInit("POST", { crop_ids: cropIds ?? [] }),
+  );
+}
+
 export function setOwnerValuation(
   cropId: string,
   update: {

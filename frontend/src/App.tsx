@@ -455,6 +455,23 @@ export default function App() {
     }
   }, [exp, startJobPolling, reportError]);
 
+  const handleAiEstimate = useCallback(
+    (cropId: string) => {
+      void mutate(() => api.aiEstimateCrop(cropId));
+    },
+    [mutate],
+  );
+
+  const handleAiEstimateAll = useCallback(async () => {
+    if (!exp) return;
+    setError(null);
+    try {
+      startJobPolling(await api.startAiEstimateJob(exp.collection.collection_id));
+    } catch (exc) {
+      reportError(exc);
+    }
+  }, [exp, startJobPolling, reportError]);
+
   const handleResumeRun = useCallback(
     async (runId: string) => {
       setError(null);
@@ -573,6 +590,7 @@ export default function App() {
               onOpenBucket={openBucket}
               onOpenStamp={(cropId) => openStamp(cropId)}
               onGatherEvidenceAll={() => void handleGatherEvidenceAll()}
+              onAiEstimateAll={() => void handleAiEstimateAll()}
               onDeleteCollection={() => void handleDeleteCollection()}
             />
           )}
@@ -617,6 +635,7 @@ export default function App() {
               onFixCrop={fixCrop}
               onReanalyze={(cropId) => void handleEvaluate([cropId])}
               onGatherEvidence={handleGatherEvidence}
+              onAiEstimate={handleAiEstimate}
               onSetValuation={handleSetValuation}
               onReplaceImage={(cropId, file) => void handleReplaceImage(cropId, file)}
               onDeleteCrop={(cropId) => void handleDeleteCrop(cropId)}

@@ -18,6 +18,7 @@ from .storage import PhilalensStore
 ATTENTION_BUCKETS = {"possibly_interesting", "investigate", "needs_expert_check"}
 
 OWNER_REVIEWED_PREFIX = "Owner-reviewed range"
+AI_ESTIMATED_PREFIX = "AI-estimated range (unverified)"
 
 # Photo instructions per unobservable factor reported by the vision pass.
 _RECAPTURE_INSTRUCTIONS: list[tuple[tuple[str, ...], str]] = [
@@ -66,6 +67,12 @@ def _stamp_headline(stamp: dict[str, Any]) -> str:
 def _is_owner_reviewed(valuation: dict[str, Any]) -> bool:
     return any(
         str(item).startswith(OWNER_REVIEWED_PREFIX) for item in valuation.get("assumptions", [])
+    )
+
+
+def _is_ai_estimated(valuation: dict[str, Any]) -> bool:
+    return any(
+        str(item).startswith(AI_ESTIMATED_PREFIX) for item in valuation.get("assumptions", [])
     )
 
 
@@ -151,6 +158,8 @@ def build_collection_report_html(store: PhilalensStore, collection_id: str) -> s
     analyzed = 0
     reviewed_rows: list[str] = []
     reviewed_totals: dict[str, list[float]] = {}
+    ai_rows: list[str] = []
+    ai_totals: dict[str, list[float]] = {}
     attention_rows: list[str] = []
     for page in pages:
         for stamp in cast(list[dict[str, Any]], page["stamps"]):
@@ -165,6 +174,7 @@ def build_collection_report_html(store: PhilalensStore, collection_id: str) -> s
             low = valuation.get("estimated_value_low")
             high = valuation.get("estimated_value_high")
             owner_reviewed = _is_owner_reviewed(valuation)
+            ai_estimated = _is_ai_estimated(valuation)
             row = (
                 f"<tr><td><img class='thumb' src='{_esc(stamp['crop_image_url'])}'/></td>"
                 f"<td>p{_esc(page['page_order'])} · #{_esc(stamp['crop_index'])}</td>"
@@ -187,6 +197,22 @@ def build_collection_report_html(store: PhilalensStore, collection_id: str) -> s
                 totals = reviewed_totals.setdefault(str(valuation.get("currency", "?")), [0.0, 0.0])
                 totals[0] += float(low)
                 totals[1] += float(high)
+            elif ai_estimated and low is not None and high is not None:
+                currency = _esc(valuation.get("currency", ""))
+                rarity = next(
+                    (
+                        _esc(str(item).removeprefix("Rarity check:").strip())
+                        for item in valuation.get("assumptions", [])
+                        if str(item).startswith("Rarity check:")
+                    ),
+                    "",
+                )
+                ai_rows.append(
+                    row + f"<td>{low:g}–{high:g} {currency}</td><td>{rarity}</td></tr>"
+                )
+                totals = ai_totals.setdefault(str(valuation.get("currency", "?")), [0.0, 0.0])
+                totals[0] += float(low)
+                totals[1] += float(high)
             elif bucket in ATTENTION_BUCKETS:
                 attention_rows.append(
                     row + "<td>no evidence-backed range yet</td><td></td></tr>"
@@ -196,13 +222,17 @@ def build_collection_report_html(store: PhilalensStore, collection_id: str) -> s
         f"<tr><td>{_esc(bucket)}</td><td>{count}</td></tr>"
         for bucket, count in bucket_counts.most_common()
     )
-    totals_line = (
-        " · ".join(
-            f"{totals[0]:g}–{totals[1]:g} {_esc(currency)}"
-            for currency, totals in sorted(reviewed_totals.items())
+    def _totals_line(totals_by_currency: dict[str, list[float]]) -> str:
+        return (
+            " · ".join(
+                f"{totals[0]:g}–{totals[1]:g} {_esc(currency)}"
+                for currency, totals in sorted(totals_by_currency.items())
+            )
+            or "none yet"
         )
-        or "none yet"
-    )
+
+    totals_line = _totals_line(reviewed_totals)
+    ai_totals_line = _totals_line(ai_totals)
     table_head = (
         "<tr><th></th><th>Location</th><th>Identity (AI prior)</th>"
         "<th>Bucket</th><th>Range</th><th>Note</th></tr>"
@@ -225,6 +255,11 @@ cannot be judged from front photos alone.</div>
 <h2>Owner-reviewed value ranges ({len(reviewed_rows)} stamps · total {totals_line})</h2>
 <table>{table_head}{"".join(reviewed_rows) if reviewed_rows else ""}</table>
 {"" if reviewed_rows else "<p class='small'>None yet — use the sold-listings link on a flagged stamp, then Set value range.</p>"}
+<h2>AI-estimated ranges — unverified ({len(ai_rows)} stamps · total {ai_totals_line})</h2>
+<p class="small">Model priors from catalog knowledge and market context. Do not sum with
+owner-reviewed figures; verify the ones that matter against sold listings.</p>
+<table>{table_head}{"".join(ai_rows) if ai_rows else ""}</table>
+{"" if ai_rows else "<p class='small'>None yet — run the AI estimate on flagged stamps.</p>"}
 <h2>Flagged, awaiting evidence or review ({len(attention_rows)} stamps)</h2>
 <table>{table_head}{"".join(attention_rows) if attention_rows else ""}</table>
 {"" if attention_rows else "<p class='small'>Nothing outstanding.</p>"}

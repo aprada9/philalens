@@ -20,6 +20,7 @@ from .costing import (
     non_openai_cost_estimate,
     vision_model_options,
 )
+from .ai_estimate import build_value_estimator_from_settings, estimate_flagged_values
 from .evaluation import EvaluationCancelledError, evaluate_collection_readiness
 from .exports import build_collection_csv, build_collection_export, build_evaluation_run_export
 from .imaging import normalize_image, safe_filename, supported_image_extension
@@ -523,6 +524,81 @@ def get_collection_report(collection_id: str) -> HTMLResponse:
     if html_page is None:
         raise HTTPException(status_code=404, detail="Collection not found.")
     return HTMLResponse(html_page)
+
+
+@app.post("/api/crops/{crop_id}/ai-estimate")
+def ai_estimate_crop(crop_id: str) -> dict[str, object]:
+    """AI value estimate (unverified prior) for a single stamp."""
+    crop = store.get_crop(crop_id)
+    if crop is None:
+        raise HTTPException(status_code=404, detail="Crop not found.")
+    page = store.get_page(crop.page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Page not found.")
+    estimator = build_value_estimator_from_settings(get_settings())
+    if estimator is None:
+        raise HTTPException(
+            status_code=400,
+            detail="AI estimates need the OpenAI provider configured in Settings.",
+        )
+    try:
+        result = estimate_flagged_values(
+            store, page.collection_id, estimator, crop_ids=[crop.crop_id]
+        )
+    except MarketEvidenceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    if result["errors"]:
+        raise HTTPException(status_code=502, detail=str(result["errors"][0]))
+
+    export = build_collection_export(store, page.collection_id)
+    if export is None:
+        raise HTTPException(status_code=500, detail="Collection was not found after estimate.")
+    return export
+
+
+@app.post("/api/collections/{collection_id}/ai-estimate/start")
+def start_ai_estimate_job(
+    collection_id: str, selection: CropSelection | None = None
+) -> dict[str, object]:
+    if store.get_collection(collection_id) is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    if build_value_estimator_from_settings(get_settings()) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="AI estimates need the OpenAI provider configured in Settings.",
+        )
+
+    crop_ids = selection.crop_ids if selection and selection.crop_ids else None
+    job_id = new_id("estjob")
+    _set_evaluation_job(
+        job_id,
+        {
+            "job_id": job_id,
+            "collection_id": collection_id,
+            "job_type": "ai_estimate",
+            "status": "queued",
+            "started_at": utc_now(),
+            "cancel_requested": False,
+            "current": 0,
+            "total": 0,
+            "current_crop_id": None,
+            "current_crop_label": None,
+            "current_crop_image_url": None,
+            "message": "Queued AI value estimates",
+            "error": None,
+            "cost_estimate": None,
+            "cost_actual": None,
+        },
+    )
+    thread = Thread(
+        target=_run_ai_estimate_job,
+        args=(job_id, collection_id, crop_ids),
+        daemon=True,
+    )
+    thread.start()
+    return _get_evaluation_job_or_404(job_id)
 
 
 @app.post("/api/crops/{crop_id}/evidence")
@@ -1173,6 +1249,69 @@ def _run_evidence_job(
     except Exception as exc:
         _update_evaluation_job(
             job_id, status="failed", message="Evidence gathering failed", error=str(exc)
+        )
+
+
+def _run_ai_estimate_job(
+    job_id: str,
+    collection_id: str,
+    crop_ids: list[str] | None,
+) -> None:
+    _update_evaluation_job(job_id, status="running", message="Estimating values with AI")
+    try:
+        estimator = build_value_estimator_from_settings(get_settings())
+        if estimator is None:
+            _update_evaluation_job(
+                job_id,
+                status="failed",
+                message="AI estimates need the OpenAI provider configured",
+                error="Vision provider not configured.",
+            )
+            return
+
+        def report_progress(current: int, total: int, crop) -> None:
+            _update_evaluation_job(
+                job_id,
+                status="running",
+                current=current,
+                total=total,
+                current_crop_id=crop.crop_id,
+                current_crop_label=f"Stamp {crop.crop_index}",
+                current_crop_image_url=f"/media/crops/{crop.crop_id}",
+                message=f"Estimating Stamp {crop.crop_index}",
+            )
+
+        result = estimate_flagged_values(
+            store,
+            collection_id,
+            estimator,
+            crop_ids=crop_ids,
+            progress_callback=report_progress,
+        )
+        if result is None:
+            _update_evaluation_job(
+                job_id, status="failed", message="Collection not found", error="Collection not found."
+            )
+            return
+        estimated = int(result["estimated_count"])
+        errors = list(result["errors"])
+        _update_evaluation_job(
+            job_id,
+            status="completed",
+            current=estimated,
+            total=int(result["target_count"]),
+            message=(
+                f"AI estimates recorded for {estimated} stamps"
+                + (f" ({len(errors)} failed)" if errors else "")
+                if estimated or errors
+                else "No flagged stamps needed an AI estimate"
+            ),
+            error="; ".join(errors[:3]) if errors else None,
+        )
+        _snapshot_database_after_job()
+    except Exception as exc:
+        _update_evaluation_job(
+            job_id, status="failed", message="AI estimation failed", error=str(exc)
         )
 
 

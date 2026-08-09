@@ -2,7 +2,37 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09, part 3): Job Re-Attach After Page Reload
+## Latest Session (2026-08-09, part 4): AI Value Estimation (Tier 2.5)
+
+The user found per-stamp manual sold-comp checking too heavy for a
+non-expert and asked whether the AI can estimate values and whether
+specialized marketplaces/bibliography exist. Answered honestly: Delcampe/
+Catawiki have sold data but no public APIs; catalogs are licensed; eBay
+Marketplace Insights (real sold data) is a gated API worth applying for
+with the existing dev account (the realized_sale tier is ready for it).
+Built the automation that IS possible:
+
+- `ai_estimate.py` (Tier 2.5): one structured model call per flagged stamp
+  — crop image (detail low) + Tier 1 identity + observation + gathered
+  evidence context — returning a conservative range, confidence, rationale,
+  rarity notes (which varieties of the issue are valuable and what to
+  check), and a recommended action (keep_common / check_sold_listings /
+  expert_review). The prompt encodes dealer heuristics (bulk material at
+  5-20% of catalog; realized ≈ 20-50% of median ask).
+- Estimates are stored as valuations with an "AI-estimated range
+  (unverified)" assumption marker, market_evidence_confidence capped at
+  0.4, and stay separate everywhere: amber label + rationale + rarity
+  notes in the drawer, separate report section with its own totals (never
+  summed with owner-reviewed), CSV `ai_estimated` column.
+- Endpoints: POST /api/crops/{id}/ai-estimate (single, sync) and
+  POST /api/collections/{id}/ai-estimate/start (batch job over flagged).
+  UI: drawer "🤖 AI estimate" button + Overview batch button.
+- Live-verified on a real flagged stamp: $0.25-2 USD, confidence 0.34,
+  honest "bulk material" verdict with watermark/perforation caveats.
+- Owner-reviewed ranges remain the human-confirmed tier; the AI estimate
+  triages which of the flagged stamps deserve that human minute.
+
+## Earlier Session (2026-08-09, part 3): Job Re-Attach After Page Reload
 
 The user finished Tier 1 on all currently-curated crops (51 flagged stamps
 collection-wide now; ~2,600 crops still awaiting curation, deferred by
