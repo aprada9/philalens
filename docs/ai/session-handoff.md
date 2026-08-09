@@ -2,7 +2,19 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 9): Parallel Vision Calls + Run Overlay
+## Latest Session (2026-08-08, part 10): Batch Evaluation
+
+The user wants to run Tier 1 in sets (analyze a batch, check results,
+run the next) rather than 5,251 stamps in one go. The Run evaluation panel
+gained a batch-size select (first 100/250/500/1000/everything, default
+250) that slices the scope's crop ids client-side in album page order.
+Each batch is a normal completed run with its own cost record; the run
+overlay (part 9) keeps every batch's results visible and the
+"Not analyzed yet" count shrinking, so re-running the same scope+batch
+walks through the collection without ever re-billing. Stop/resume remains
+available inside any batch.
+
+## Earlier Session (2026-08-08, part 9): Parallel Vision Calls + Run Overlay
 
 Preparation for the user's first big Tier 1 run (~5,200 ready crops):
 

@@ -43,6 +43,7 @@ export default function OverviewView({
   const stamps = useMemo(() => exp.pages.flatMap((page) => page.stamps), [exp]);
   const needsReview = exp.collection.needs_crop_review_count;
   const [evaluateScope, setEvaluateScope] = useState<EvaluateScope>("not_analyzed");
+  const [evaluateBatchSize, setEvaluateBatchSize] = useState<string>("250");
 
   const bucketCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -101,13 +102,27 @@ export default function OverviewView({
           .map((stamp) => stamp.crop_id),
         count: 0,
       },
-      all: { label: "All stamps", ids: undefined, count: eligible.length },
+      all: {
+        label: "All stamps",
+        ids: eligible.map((stamp) => stamp.crop_id),
+        count: eligible.length,
+      },
     };
     for (const key of ["not_analyzed", "attention", "failed"] as const) {
       scopes[key].count = scopes[key].ids?.length ?? 0;
     }
     return scopes;
   }, [stamps]);
+
+  // Batching: evaluate the first N stamps of the scope (in album page
+  // order), so the user can run a set, check results, then run the next —
+  // each batch is a complete run and already-analyzed stamps never re-bill.
+  const evaluateSelection = useMemo(() => {
+    const scope = evaluateScopes[evaluateScope];
+    const ids = scope.ids ?? [];
+    if (evaluateBatchSize === "all") return ids;
+    return ids.slice(0, Number(evaluateBatchSize));
+  }, [evaluateScopes, evaluateScope, evaluateBatchSize]);
 
   const countries = useMemo(() => {
     const counts = new Map<string, number>();
@@ -343,15 +358,23 @@ export default function OverviewView({
                 </option>
                 <option value="all">All stamps ({evaluateScopes.all.count})</option>
               </select>
+              <select
+                value={evaluateBatchSize}
+                onChange={(event) => setEvaluateBatchSize(event.target.value)}
+                title="Run the scope in sets: analyze a batch, check results, run the next — analyzed stamps never re-bill"
+              >
+                <option value="100">Batch: first 100</option>
+                <option value="250">Batch: first 250</option>
+                <option value="500">Batch: first 500</option>
+                <option value="1000">Batch: first 1000</option>
+                <option value="all">Batch: everything</option>
+              </select>
               <button
                 className="btn primary"
-                disabled={
-                  busy ||
-                  (evaluateScope !== "all" && evaluateScopes[evaluateScope].count === 0)
-                }
-                onClick={() => onEvaluate(evaluateScopes[evaluateScope].ids)}
+                disabled={busy || evaluateSelection.length === 0}
+                onClick={() => onEvaluate(evaluateSelection)}
               >
-                Evaluate
+                Evaluate {evaluateSelection.length}
               </button>
             </div>
             {needsReview > 0 && (
