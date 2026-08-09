@@ -125,7 +125,9 @@ def test_api_uploads_collection_to_temp_storage(tmp_path: Path, monkeypatch) -> 
 
     assert selected_evaluate_response.status_code == 200
     selected_evaluate_payload = selected_evaluate_response.json()
-    assert selected_evaluate_payload["latest_evaluation_summary"]["evaluated_stamp_count"] == 1
+    # The summary overlays runs per crop: the first run's crop stays counted
+    # alongside the newly evaluated selected crop.
+    assert selected_evaluate_payload["latest_evaluation_summary"]["evaluated_stamp_count"] == 2
     assert selected_evaluate_payload["evaluation_runs"][0]["settings"]["crop_scope"] == "selected"
     assert "cost_estimate" in selected_evaluate_payload["evaluation_runs"][0]["settings"]
     assert "cost_actual" in selected_evaluate_payload["evaluation_runs"][0]["settings"]

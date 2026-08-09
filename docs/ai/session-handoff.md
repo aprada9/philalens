@@ -2,7 +2,33 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-08, part 8): Grid Triage for Page-Level Curation
+## Latest Session (2026-08-08, part 9): Parallel Vision Calls + Run Overlay
+
+Preparation for the user's first big Tier 1 run (~5,200 ready crops):
+
+- Vision calls now run concurrently: sliding-window ThreadPoolExecutor in
+  `evaluate_collection_readiness` (`vision_concurrency` param; API passes
+  `PHILALENS_VISION_CONCURRENCY`, default 4). All DB writes and progress
+  callbacks stay on the main thread; per-crop checkpoints, resume,
+  duplicate fan-out (members written when their representative completes),
+  and cancellation are preserved. Cancel semantics shifted slightly:
+  in-flight (already paid) calls finish and are saved; no new dispatches.
+  Expected wall-clock for 5,200 crops: ~10-13 h sequential → ~2.5-3.5 h at
+  concurrency 4.
+- `OpenAIStampVisionAdapter` now wraps transport/API errors (429s,
+  timeouts, 5xx) as `VisionObservationError`, so per-crop retries with the
+  new longer backoff (2/5/15 s) absorb rate-limit bursts instead of the
+  whole run failing. Failures remain re-runnable via the "Failed
+  extraction" scope.
+- CRITICAL FIX for scoped runs: the collection export previously read only
+  the latest run, so a second scoped run would have hidden the first run's
+  results and re-offered those stamps as "not analyzed" (double billing
+  risk). `build_collection_export` now overlays runs per crop: each crop
+  shows all four record types from the newest run that evaluated it, and
+  the collection summary counts the overlay. Verified: two scoped runs
+  both remain visible; export latency unchanged (0.18 s live).
+
+## Earlier Session (2026-08-08, part 8): Grid Triage for Page-Level Curation
 
 Real curation feedback: most flagged crops are obvious Keeps, plus a batch
 of obvious Deletes (album borders/bindings detected as stamps). One-at-a-

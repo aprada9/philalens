@@ -257,6 +257,7 @@ def evaluate_collection(
         collection_id,
         vision_adapter=vision_adapter,
         crop_ids=crop_ids,
+        vision_concurrency=get_settings().vision_concurrency,
     )
     if run is None:
         raise HTTPException(status_code=404, detail="Collection not found.")
@@ -906,6 +907,7 @@ def _run_evaluation_job(
             crop_ids=crop_ids,
             progress_callback=report_progress,
             resume_run_id=resume_run_id,
+            vision_concurrency=get_settings().vision_concurrency,
         )
         if run is None:
             _update_evaluation_job(

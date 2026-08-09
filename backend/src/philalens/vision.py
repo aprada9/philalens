@@ -84,7 +84,18 @@ class OpenAIStampVisionAdapter:
         self.client: Any = client
 
     def observe_crop(self, crop: StampCrop, run_id: str) -> VisionAnalysisResult:
-        response = self.client.responses.create(
+        try:
+            response = self._create_response(crop)
+        except Exception as exc:
+            # Wrap transport/API failures (rate limits, timeouts, 5xx) so the
+            # evaluation loop's per-crop retry/backoff handles them instead of
+            # aborting the whole run.
+            raise VisionObservationError(f"OpenAI API call failed: {exc}") from exc
+
+        return self._analysis_from_response(response, crop, run_id)
+
+    def _create_response(self, crop: StampCrop) -> Any:
+        return self.client.responses.create(
             model=self.model_name,
             input=[
                 {
@@ -112,6 +123,9 @@ class OpenAIStampVisionAdapter:
             store=False,
         )
 
+    def _analysis_from_response(
+        self, response: Any, crop: StampCrop, run_id: str
+    ) -> VisionAnalysisResult:
         output_text = _response_output_text(response)
         try:
             observation = parse_stamp_observation_payload(output_text)

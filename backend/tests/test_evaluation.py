@@ -509,10 +509,12 @@ def test_cancelled_run_saves_progress_and_resumes(tmp_path: Path) -> None:
     assert run is not None
     assert run.status == "interrupted"
     assert "run_cancelled_by_user" in run.warnings
-    # The first crop was fully processed and checkpointed before the stop.
-    assert adapter.seen_crop_ids == ["crop_one"]
+    # The cancel fires on crop_two's completion: both analyzed crops are
+    # checkpointed (their API calls were already paid for) and no further
+    # crop is dispatched.
+    assert adapter.seen_crop_ids == ["crop_one", "crop_two"]
     valuations = store.list_stamp_valuations_for_run(run.run_id)
-    assert {valuation.crop_id for valuation in valuations} == {"crop_one"}
+    assert {valuation.crop_id for valuation in valuations} == {"crop_one", "crop_two"}
 
     adapter.seen_crop_ids.clear()
     resumed = evaluate_collection_readiness(
@@ -524,10 +526,91 @@ def test_cancelled_run_saves_progress_and_resumes(tmp_path: Path) -> None:
 
     assert resumed is not None
     assert resumed.status == "completed"
-    assert adapter.seen_crop_ids == ["crop_two", "crop_three"]
+    assert adapter.seen_crop_ids == ["crop_three"]
     valuations = store.list_stamp_valuations_for_run(resumed.run_id)
     assert {valuation.crop_id for valuation in valuations} == {
         "crop_one",
         "crop_two",
         "crop_three",
     }
+
+
+def test_parallel_vision_calls_overlap_and_record_everything(tmp_path: Path) -> None:
+    import threading
+    import time as time_module
+
+    store = PhilalensStore(tmp_path / "philalens.sqlite")
+    store.initialize()
+    crop_ids = [f"crop_{index}" for index in range(6)]
+    collection = _collection_with_clean_crops(store, tmp_path, crop_ids)
+
+    class SlowVisionAdapter(FakeVisionAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self._lock = threading.Lock()
+            self._active = 0
+            self.max_concurrent = 0
+
+        def observe_crop(self, crop: StampCrop, run_id: str):
+            with self._lock:
+                self._active += 1
+                self.max_concurrent = max(self.max_concurrent, self._active)
+            time_module.sleep(0.05)
+            try:
+                return super().observe_crop(crop, run_id)
+            finally:
+                with self._lock:
+                    self._active -= 1
+
+    adapter = SlowVisionAdapter()
+    progressed: list[int] = []
+
+    run = evaluate_collection_readiness(
+        store,
+        collection.collection_id,
+        vision_adapter=adapter,
+        progress_callback=lambda current, total, crop: progressed.append(current),
+        vision_concurrency=3,
+    )
+
+    assert run is not None
+    assert run.status == "completed"
+    assert adapter.max_concurrent > 1
+    assert sorted(adapter.seen_crop_ids) == sorted(crop_ids)
+    valuations = store.list_stamp_valuations_for_run(run.run_id)
+    assert {valuation.crop_id for valuation in valuations} == set(crop_ids)
+    # Progress is monotonic and complete even with out-of-order completions.
+    assert progressed == list(range(1, len(crop_ids) + 1))
+    assert run.settings["vision_api_call_count"] == len(crop_ids)
+
+
+def test_scoped_runs_overlay_in_collection_export(tmp_path: Path) -> None:
+    """A later scoped run must not hide earlier runs' results per crop."""
+    store = PhilalensStore(tmp_path / "philalens.sqlite")
+    store.initialize()
+    collection = _collection_with_clean_crops(store, tmp_path, ["crop_a", "crop_b"])
+    adapter = FakeV2VisionAdapter()
+
+    first = evaluate_collection_readiness(
+        store, collection.collection_id, vision_adapter=adapter, crop_ids=["crop_a"]
+    )
+    second = evaluate_collection_readiness(
+        store, collection.collection_id, vision_adapter=adapter, crop_ids=["crop_b"]
+    )
+    assert first is not None and second is not None
+
+    export = build_collection_export(store, collection.collection_id)
+    assert export is not None
+    stamps = {
+        stamp["crop_id"]: stamp
+        for page in export["pages"]
+        for stamp in page["stamps"]
+    }
+    # crop_a keeps its first-run results even though a newer run exists.
+    assert stamps["crop_a"]["observation"]["status"] == "available"
+    assert stamps["crop_a"]["evaluation_run_id"] == first.run_id
+    assert stamps["crop_b"]["observation"]["status"] == "available"
+    assert stamps["crop_b"]["evaluation_run_id"] == second.run_id
+    summary = export["latest_evaluation_summary"]
+    assert summary["evaluated_stamp_count"] == 2
+    assert summary["value_bucket_counts"] == {"possibly_interesting": 2}

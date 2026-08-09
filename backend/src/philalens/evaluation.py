@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import replace
 
 from .costing import (
@@ -44,9 +45,10 @@ class EvaluationCancelledError(Exception):
     be resumed later without repeating completed crops.
     """
 
-# Backoff before each retry of a failed vision call. Tests may monkeypatch
+# Backoff before each retry of a failed vision call. The long final step
+# rides out rate-limit bursts under concurrent calls. Tests may monkeypatch
 # this to () to avoid sleeping.
-VISION_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 3.0)
+VISION_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 5.0, 15.0)
 
 _PRIOR_BUCKET_ACTIONS = {
     "likely_common": "no individual review needed; spot-check only",
@@ -62,6 +64,7 @@ def evaluate_collection_readiness(
     crop_ids: list[str] | None = None,
     progress_callback: Callable[[int, int, StampCrop], None] | None = None,
     resume_run_id: str | None = None,
+    vision_concurrency: int = 1,
 ) -> EvaluationRunRecord | None:
     collection = store.get_collection(collection_id)
     if collection is None:
@@ -139,79 +142,137 @@ def evaluate_collection_readiness(
             representative_ids.add(group[0].crop_id)
             for member in group[1:]:
                 duplicate_of[member.crop_id] = group[0].crop_id
-    representative_analyses: dict[str, VisionAnalysisResult | None] = {}
 
-    cancelled = False
-    total_crops = len(pending_crops)
-    for index, crop in enumerate(pending_crops, start=1):
-        if progress_callback is not None:
-            try:
-                progress_callback(index, total_crops, crop)
-            except EvaluationCancelledError:
-                cancelled = True
-                break
-        vision_observation_status = "not_connected"
-        analysis: VisionAnalysisResult | None = None
-        derived_from: str | None = None
+    # Split the work: crops that need an API call (representatives and
+    # singletons), duplicate members waiting on their representative, and
+    # crops recorded without vision.
+    call_crops: list[StampCrop] = []
+    skip_crops: list[StampCrop] = []
+    members_by_representative: dict[str, list[StampCrop]] = {}
+    for crop in pending_crops:
         if vision_adapter and crop.review_state != REVIEW_NEEDS_CROP_REVIEW:
             representative_id = duplicate_of.get(crop.crop_id)
-            if representative_id is not None and representative_id in representative_analyses:
-                representative_analysis = representative_analyses[representative_id]
-                if representative_analysis is None:
-                    vision_observation_status = "failed"
-                    errors.append(
-                        f"{crop.crop_id}: vision failed on duplicate representative "
-                        f"{representative_id}"
-                    )
-                    store.add_stamp_observation(
-                        _readiness_observation(
-                            run.run_id,
-                            crop,
-                            extra_warnings=["ai_vision_failed", "derived_from_duplicate_failed"],
-                        )
-                    )
-                else:
-                    analysis = _derived_analysis(representative_analysis, crop, representative_id)
-                    derived_from = representative_id
-                    _store_analysis(store, analysis)
-                    vision_observation_status = "available"
-                    successful_vision_count += 1
+            if representative_id is not None:
+                members_by_representative.setdefault(representative_id, []).append(crop)
             else:
-                try:
-                    analysis = _observe_with_retries(vision_adapter, crop, run.run_id)
-                    _store_analysis(store, analysis)
-                    vision_observation_status = "available"
-                    successful_vision_count += 1
-                    vision_api_call_count += 1
-                    if crop.crop_id in representative_ids:
-                        representative_analyses[crop.crop_id] = analysis
-                except VisionObservationError as exc:
-                    vision_observation_status = "failed"
-                    errors.append(f"{crop.crop_id}: {exc}")
-                    store.add_stamp_observation(
-                        _readiness_observation(
-                            run.run_id,
-                            crop,
-                            extra_warnings=["ai_vision_failed"],
-                        )
-                    )
-                    if crop.crop_id in representative_ids:
-                        representative_analyses[crop.crop_id] = None
+                call_crops.append(crop)
         else:
-            if vision_adapter and crop.review_state == REVIEW_NEEDS_CROP_REVIEW:
-                vision_observation_status = "skipped_crop_review"
-                skipped_vision_for_crop_review = True
-            store.add_stamp_observation(_readiness_observation(run.run_id, crop))
+            skip_crops.append(crop)
 
+    cancelled = False
+    completed_count = 0
+    total_crops = len(pending_crops)
+
+    def report_done(crop: StampCrop) -> None:
+        # Called on the main thread only; a cancel raised by the callback
+        # stops new dispatches while in-flight (already paid) calls finish
+        # and are saved.
+        nonlocal cancelled, completed_count
+        completed_count += 1
+        if progress_callback is None or cancelled:
+            return
+        try:
+            progress_callback(completed_count, total_crops, crop)
+        except EvaluationCancelledError:
+            cancelled = True
+
+    def record_success(crop: StampCrop, analysis: VisionAnalysisResult) -> None:
+        nonlocal successful_vision_count
+        _store_analysis(store, analysis)
         store.add_stamp_valuation(
             _readiness_valuation(
-                run.run_id,
-                crop,
-                vision_observation_status=vision_observation_status,
-                analysis=analysis,
-                derived_from=derived_from,
+                run.run_id, crop, vision_observation_status="available", analysis=analysis
             )
         )
+        successful_vision_count += 1
+        report_done(crop)
+        for member in members_by_representative.get(crop.crop_id, []):
+            derived = _derived_analysis(analysis, member, crop.crop_id)
+            _store_analysis(store, derived)
+            store.add_stamp_valuation(
+                _readiness_valuation(
+                    run.run_id,
+                    member,
+                    vision_observation_status="available",
+                    analysis=derived,
+                    derived_from=crop.crop_id,
+                )
+            )
+            successful_vision_count += 1
+            report_done(member)
+
+    def record_failure(crop: StampCrop, message: str) -> None:
+        errors.append(f"{crop.crop_id}: {message}")
+        store.add_stamp_observation(
+            _readiness_observation(run.run_id, crop, extra_warnings=["ai_vision_failed"])
+        )
+        store.add_stamp_valuation(
+            _readiness_valuation(run.run_id, crop, vision_observation_status="failed")
+        )
+        report_done(crop)
+        for member in members_by_representative.get(crop.crop_id, []):
+            errors.append(
+                f"{member.crop_id}: vision failed on duplicate representative {crop.crop_id}"
+            )
+            store.add_stamp_observation(
+                _readiness_observation(
+                    run.run_id,
+                    member,
+                    extra_warnings=["ai_vision_failed", "derived_from_duplicate_failed"],
+                )
+            )
+            store.add_stamp_valuation(
+                _readiness_valuation(run.run_id, member, vision_observation_status="failed")
+            )
+            report_done(member)
+
+    for crop in skip_crops:
+        if cancelled:
+            break
+        vision_observation_status = "not_connected"
+        if vision_adapter and crop.review_state == REVIEW_NEEDS_CROP_REVIEW:
+            vision_observation_status = "skipped_crop_review"
+            skipped_vision_for_crop_review = True
+        store.add_stamp_observation(_readiness_observation(run.run_id, crop))
+        store.add_stamp_valuation(
+            _readiness_valuation(
+                run.run_id, crop, vision_observation_status=vision_observation_status
+            )
+        )
+        report_done(crop)
+
+    # Vision calls run concurrently in a sliding window; all database writes
+    # and progress callbacks stay on this thread. Each crop's valuation is
+    # its checkpoint, so a crash or stop mid-run resumes without re-billing.
+    if vision_adapter is not None and call_crops and not cancelled:
+        adapter = vision_adapter
+        with ThreadPoolExecutor(max_workers=max(1, vision_concurrency)) as executor:
+            crop_iter = iter(call_crops)
+            in_flight: dict[Future[VisionAnalysisResult], StampCrop] = {}
+
+            def submit_next() -> None:
+                if cancelled:
+                    return
+                next_crop = next(crop_iter, None)
+                if next_crop is not None:
+                    in_flight[
+                        executor.submit(_observe_with_retries, adapter, next_crop, run.run_id)
+                    ] = next_crop
+
+            for _ in range(max(1, vision_concurrency)):
+                submit_next()
+
+            while in_flight:
+                done, _pending = wait(list(in_flight), return_when=FIRST_COMPLETED)
+                for future in done:
+                    crop = in_flight.pop(future)
+                    error = future.exception()
+                    if error is None:
+                        vision_api_call_count += 1
+                        record_success(crop, future.result())
+                    else:
+                        record_failure(crop, str(error))
+                    submit_next()
 
     warnings = [
         "source_matching_not_connected",

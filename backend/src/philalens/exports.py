@@ -19,37 +19,48 @@ def build_collection_export(store: PhilalensStore, collection_id: str) -> dict[s
 
     evaluation_runs = store.list_evaluation_runs(collection_id)
     latest_run = evaluation_runs[0] if evaluation_runs else None
-    latest_evaluation_summary = (
-        build_evaluation_summary(store, latest_run.run_id) if latest_run else None
-    )
 
-    # Load the latest run's records once and group them by crop: per-crop
-    # queries made the export O(crops x 4) database roundtrips, which is far
-    # too slow for a full-collection album (thousands of crops).
-    observation_by_crop: dict[str, Any] = {}
-    candidates_by_crop: dict[str, list[Any]] = {}
-    evidence_by_crop: dict[str, list[Any]] = {}
-    valuation_by_crop: dict[str, Any] = {}
-    if latest_run:
+    # Overlay runs per crop: scoped runs (a page here, the not-yet-analyzed
+    # rest later) each cover only part of the collection, so "the latest run"
+    # is the wrong lens for a crop. Each crop shows the records of the newest
+    # run that evaluated it — all four record types from that same run, so a
+    # crop's observation, candidates, evidence, and valuation never mix runs.
+    # Records are loaded per run (4 queries each), never per crop.
+    chosen_run_by_crop: dict[str, str] = {}
+    observations_by_run_crop: dict[tuple[str, str], Any] = {}
+    candidates_by_run_crop: dict[tuple[str, str], list[Any]] = {}
+    evidence_by_run_crop: dict[tuple[str, str], list[Any]] = {}
+    valuations_by_run_crop: dict[tuple[str, str], Any] = {}
+    for run in reversed(evaluation_runs):  # oldest first: newer runs overwrite
+        run_id = run.run_id
         # Run-level lists are ordered ascending, so the last record per crop
-        # is the newest — matching the per-crop lookups this replaces.
-        for observation_record in store.list_stamp_observations_for_run(latest_run.run_id):
-            observation_by_crop[observation_record.crop_id] = observation_record
-        for candidate_record in store.list_catalog_candidates_for_run(latest_run.run_id):
-            candidates_by_crop.setdefault(candidate_record.crop_id, []).append(candidate_record)
-        for evidence_record in store.list_source_evidence_for_run(latest_run.run_id):
-            evidence_by_crop.setdefault(evidence_record.crop_id, []).append(evidence_record)
-        for valuation_record in store.list_stamp_valuations_for_run(latest_run.run_id):
-            valuation_by_crop[valuation_record.crop_id] = valuation_record
+        # is the newest within the run.
+        for observation_record in store.list_stamp_observations_for_run(run_id):
+            observations_by_run_crop[(run_id, observation_record.crop_id)] = observation_record
+        for candidate_record in store.list_catalog_candidates_for_run(run_id):
+            candidates_by_run_crop.setdefault(
+                (run_id, candidate_record.crop_id), []
+            ).append(candidate_record)
+        for evidence_record in store.list_source_evidence_for_run(run_id):
+            evidence_by_run_crop.setdefault(
+                (run_id, evidence_record.crop_id), []
+            ).append(evidence_record)
+        for valuation_record in store.list_stamp_valuations_for_run(run_id):
+            valuations_by_run_crop[(run_id, valuation_record.crop_id)] = valuation_record
+            chosen_run_by_crop[valuation_record.crop_id] = run_id
 
     pages_payload: list[dict[str, object]] = []
+    overlay_valuations: list[Any] = []
     for page in store.list_pages(collection_id):
         crops_payload = []
         for crop in store.list_crops_for_page(page.page_id):
-            observation = observation_by_crop.get(crop.crop_id)
-            candidates = candidates_by_crop.get(crop.crop_id, [])
-            evidence = evidence_by_crop.get(crop.crop_id, [])
-            valuation = valuation_by_crop.get(crop.crop_id)
+            crop_run_id = chosen_run_by_crop.get(crop.crop_id)
+            observation = observations_by_run_crop.get((crop_run_id, crop.crop_id))
+            candidates = candidates_by_run_crop.get((crop_run_id, crop.crop_id), [])
+            evidence = evidence_by_run_crop.get((crop_run_id, crop.crop_id), [])
+            valuation = valuations_by_run_crop.get((crop_run_id, crop.crop_id))
+            if valuation is not None:
+                overlay_valuations.append(valuation)
 
             observation_payload: dict[str, object]
             if observation is None:
@@ -61,16 +72,16 @@ def build_collection_export(store: PhilalensStore, collection_id: str) -> dict[s
                 observation_payload = {"status": "available", **asdict(observation)}
 
             identification_payload: dict[str, object]
-            if latest_run is None:
+            if crop_run_id is None:
                 identification_payload = {
                     "status": "not_started",
                     "candidates": [],
-                    "note": "Catalog matching is not connected yet.",
+                    "note": "This crop has not been evaluated yet.",
                 }
             else:
                 identification_payload = {
                     "status": "available" if candidates else "no_candidates",
-                    "run_id": latest_run.run_id,
+                    "run_id": crop_run_id,
                     "candidates": [asdict(candidate) for candidate in candidates],
                 }
 
@@ -104,7 +115,7 @@ def build_collection_export(store: PhilalensStore, collection_id: str) -> dict[s
                     "description": observation.design_subject
                     if observation and observation.design_subject
                     else "Pending vision extraction.",
-                    "evaluation_run_id": latest_run.run_id if latest_run else None,
+                    "evaluation_run_id": crop_run_id,
                     "observation": observation_payload,
                     "identification": identification_payload,
                     "evidence": [asdict(item) for item in evidence],
@@ -126,6 +137,31 @@ def build_collection_export(store: PhilalensStore, collection_id: str) -> dict[s
                 "stamps": crops_payload,
             }
         )
+
+    # Collection-level summary over the overlay (each crop's newest results
+    # across all runs), so scoped runs never hide earlier results.
+    latest_evaluation_summary: dict[str, object] | None = None
+    if latest_run is not None:
+        bucket_counts = Counter(valuation.value_bucket for valuation in overlay_valuations)
+        attention_buckets = {"possibly_interesting", "needs_expert_check"}
+        latest_evaluation_summary = {
+            "run_id": latest_run.run_id,
+            "status": latest_run.status,
+            "pipeline_version": latest_run.pipeline_version,
+            "started_at": latest_run.started_at,
+            "finished_at": latest_run.finished_at,
+            "evaluated_stamp_count": len(overlay_valuations),
+            "unevaluated_stamp_count": max(
+                0, collection.stamp_count - len(overlay_valuations)
+            ),
+            "crop_review_remaining": collection.needs_crop_review_count,
+            "attention_recommended_count": sum(
+                bucket_counts[bucket] for bucket in attention_buckets
+            ),
+            "value_bucket_counts": dict(sorted(bucket_counts.items())),
+            "warnings": latest_run.warnings,
+            "errors": latest_run.errors,
+        }
 
     return {
         "collection": {

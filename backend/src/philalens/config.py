@@ -85,6 +85,9 @@ class Settings:
     openai_vision_detail: str = field(
         default_factory=lambda: _getenv("PHILALENS_OPENAI_VISION_DETAIL", "high")
     )
+    vision_concurrency: int = field(
+        default_factory=lambda: max(1, int(_getenv("PHILALENS_VISION_CONCURRENCY", "4")))
+    )
     ebay_app_id: str | None = field(
         default_factory=lambda: _getenv_optional("PHILALENS_EBAY_APP_ID")
     )
