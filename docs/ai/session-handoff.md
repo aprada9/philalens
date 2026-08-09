@@ -2,7 +2,28 @@
 
 Last updated: 2026-08-08
 
-## Latest Session (2026-08-09, part 5): HipStamp Adapter + Source Survey
+## Latest Session (2026-08-09, part 6): Open-Source Portfolio Prep
+
+The user decided (via explicit choices): real-collection screenshots, MIT
+license, highlight the AI-agent development workflow, English-only README.
+Done:
+
+- Pre-flight safety: git history scanned — `.env` never committed, only the
+  fake `sk-test` in tests matches secret patterns; `data/` fully ignored.
+- 7 real screenshots captured via Playwright (dark overview, stamps
+  gallery, stamp drawer with the Spain 1875 Ultramar card, curate queue,
+  grid triage with marks, light overview, collection report) into
+  `docs/screenshots/` (downscaled to 1600px).
+- `LICENSE` (MIT, the user's name) and a full README rewrite: hero shot +
+  badges, real metrics (241 pages / 7,900+ stamps / ~$12), mermaid funnel
+  and architecture diagrams, evidence-tier honesty table, engineering
+  highlights (parallelism, cost engineering, 4.96s→0.19s perf case),
+  agent-maintainable-software section, quickstart, limitations.
+- NOT done by the agent: flipping the repo to public — that is the user's
+  action (GitHub Settings → Danger Zone → Change visibility), after
+  reviewing the rendered README.
+
+## Earlier Session (2026-08-09, part 5): HipStamp Adapter + Source Survey
 
 The user suggested HipStamp, Colnect, theswedishtiger.com, and the APS
 store. Findings: HipStamp has a free public API (hip-ecommerce.readme.io,
